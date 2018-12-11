@@ -22,7 +22,6 @@ pc = pc/20
 tile_size = 128
 pc_tile = np.tile(pc, (tile_size, 1, 1))
 
-
 def show_pc(point_cloud):
     x, y, z = point_cloud[0, :, 0], point_cloud[0, :, 1], point_cloud[0, :, 2]
     x_2, y_2, z_2 =point_cloud[1, :, 0], point_cloud[1, :, 1], point_cloud[1, :, 2]
@@ -73,9 +72,7 @@ def show_all(point_cloud, color=None , plot_plane=False, plot_arrow=True):
         mlab.quiver3d(x, y, z, u, v, w, scale_factor=0.01)   # scale_factor=1
         mlab.show()
 
-
     point_cloud = point_cloud.visible
-
 
     if len(point_cloud.shape) == 2:
         point_cloud = np.expand_dims(point_cloud, axis=0)
@@ -345,7 +342,7 @@ class PointCloud:
         self.position = one_pointcloud  # nx3 numpy array
         self.center = np.mean(self.position, axis=0)  # 1x3
         self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position
+        self.visible = self.position  # for projection use
         self.plane = None
         self.plane_origin = None
         self.plane_project_points = None
@@ -703,6 +700,13 @@ def point2line_dist(point, line_origin, line_vector):
 
 
 def show_projection(pc_path='', nb_sample=15000, show_origin=False):
+    """
+
+    :param pc_path: numpy arrayof nx3
+    :param nb_sample:  how many points
+    :param show_origin:  show before projection or not
+    :return:
+    """
     fig = plt.figure()
 
     pc = np.loadtxt(pc_path)  # n x 3
@@ -857,7 +861,6 @@ def show_projection(pc_path='', nb_sample=15000, show_origin=False):
             v = pc_class.plane_project_points[:, 1] - pc_class.visible[:, 1]
 
             w = pc_class.plane_project_points[:, 2] - pc_class.visible[:, 2]
-
 
             # x = pc_class.position[:, 0]
             # y = pc_class.position[:, 1]

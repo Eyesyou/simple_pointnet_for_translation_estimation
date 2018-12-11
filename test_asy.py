@@ -4,6 +4,8 @@ import tensorflow as tf
 from mayavi import mlab
 from scipy.spatial import distance
 import math
+from plyfile import PlyData, PlyElement
+
 class OctNode:
     def __init__(self, coordinates, size, data=None):
         assert isinstance(coordinates, np.ndarray)
@@ -20,6 +22,7 @@ class OctNode:
         self.dfl = None
         self.dfr = None
         self.children = [self.ubl, self.ubr, self.ufl, self.ufr, self.dbl, self.dbr, self.dfl, self.dfr]
+
 
 class PointCloud:
     def __init__(self, one_pointcloud):
@@ -169,7 +172,7 @@ class PointCloud:
     def show(self, not_show=False, scale=0.005):
         mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
         fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                            self.position[:, 2] * 0.0001 + self.range * scale,
+                            self.position[:, 2] * 10**-9 + self.range * scale,
                             colormap='Spectral', scale_factor=1)
         if not not_show:
             mlab.show()
@@ -307,20 +310,23 @@ class PointCloud:
 
                 neighbor_idx = self.point_kneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-
+                print('neighbor_idx:\n', neighbor_idx)
+                # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
+                              self.position[neighbor_idx, 2] * 10**-6 + self.range * 0.05,
                               color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.02, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                              scale_factor=0.2)  # tuple(np.random.random((3,)).tolist())
 
+                # show the whole point cloud
                 mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 0.0001 + self.range * 0.05,
+                              self.position[:, 2] * 10**-9 + self.range * 0.05,
                               color=(0, 1, 0), scale_factor=0.1)
                 mlab.show()
 
     def generate_r_neighbor(self, r=None, show_result=False):
         if r is None:
-            r = self.range / 20
+            r = self.range / 40
         else:
             assert 0 < r < self.range
 
@@ -341,22 +347,41 @@ class PointCloud:
 
         if show_result:
             for i in range(5):
-                j = np.random.choice(self.nb_points, 1)  # point
+                j = np.random.choice(self.nb_points, 1)  # random point index
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                 neighbor_idx = self.point_rneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-
+                # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
+                              self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
                               color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.02, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                              scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
 
+                # show the whole point cloud
                 mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 0.0001 + self.range * 0.05,
-                              color=(0, 1, 0), scale_factor=0.1)
+                              self.position[:, 2] * 10**-9 + self.range * 0.005,
+                              color=(0, 1, 0), scale_factor=1)
+
+                # show the sphere on the neighbor
+                mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                              self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
+                              transparent=True, opacity=0.3)
                 mlab.show()
 
+    def down_sample(self, number_of_downsample=10000):
+        choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
+        self.position = self.position[choice_idx]
+
+        self.min_limit = np.amin(self.position, axis=0)  # 1x3
+        self.max_limit = np.amax(self.position, axis=0)  # 1x3
+        self.range = self.max_limit - self.min_limit
+        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
+        self.center = np.mean(self.position, axis=0)  # 1x3
+        self.nb_points = np.shape(self.position)[0]
+        self.visible = self.position
+        print(self.nb_points, ' points', 'range:', self.range)
 
 # readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/train_set4noiseout/project_data.h5', 'r')  # file path
 
@@ -397,7 +422,7 @@ def test_uniform_rotation(n=50000):
     print(p.shape)
     print(np.linalg.norm(p, axis=1))
     mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
-    mlab.points3d(p[:, 0], p[:, 1], p[:, 2], p[:, 0]*0.0001+1, colormap='Spectral', scale_factor=0.02)
+    mlab.points3d(p[:, 0], p[:, 1], p[:, 2], p[:, 0]*10**-9+1, colormap='Spectral', scale_factor=0.02)
     # mlab.points3d(0, 0, 0, color=(1, 0, 0), scale_factor=0.2)
     mlab.show()
 
@@ -570,12 +595,19 @@ def point2line_dist(point, line_origin, line_vector):
 
 
 if __name__ == "__main__":
-    A = np.random.random([7000, 3])
+    A = np.random.random([70, 3])
     A = np.array(A)
-    print(A)
-    A = PointCloud(A)
-    A.generate_k_neighbor(show_result=True)
+    # A = PointCloud(A)
+    # A.generate_k_neighbor(show_result=True)
+    plydata = PlyData.read('./pointcloud/lab work peace by reconstruction.ply')
 
+    vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+    vertex = vertex[:, 0:3]
+    pc = PointCloud(vertex)
+    pc.down_sample()
+    pc.generate_r_neighbor(show_result=True)
+
+    # print('vertext[:].tolist():\n', plydata['vertex'][:])
     # A = tf.constant(A, dtype=tf.float64)
     # A = tf_cov_mat(A)
     #
