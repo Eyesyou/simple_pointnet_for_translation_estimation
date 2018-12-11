@@ -22,6 +22,7 @@ pc = pc/20
 tile_size = 128
 pc_tile = np.tile(pc, (tile_size, 1, 1))
 
+
 def show_pc(point_cloud):
     x, y, z = point_cloud[0, :, 0], point_cloud[0, :, 1], point_cloud[0, :, 2]
     x_2, y_2, z_2 =point_cloud[1, :, 0], point_cloud[1, :, 1], point_cloud[1, :, 2]
@@ -478,7 +479,7 @@ class PointCloud:
     def show(self, not_show=False, scale=0.005):
         mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
         fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                            self.position[:, 2] * 0.0001 + self.range * scale,
+                            self.position[:, 2] * 10**-9 + self.range * scale,
                             colormap='Spectral', scale_factor=1)
         if not not_show:
             mlab.show()
@@ -610,26 +611,28 @@ class PointCloud:
         self.point_kneighbors = np.transpose(idx)  # n x 3
 
         if show_result:
-            for i in range(10):
+            for i in range(10):  # number of pictures you want to show
                 j = np.random.choice(self.nb_points, 1)  # point
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                 neighbor_idx = self.point_kneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-
+                # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
+                              self.position[neighbor_idx, 2] * 10**-6 + self.range * 0.05,
                               color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.02, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                              scale_factor=0.2)  # tuple(np.random.random((3,)).tolist())
 
+                # show the whole point cloud
                 mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 0.0001 + self.range * 0.05,
+                              self.position[:, 2] * 10**-9 + self.range * 0.05,
                               color=(0, 1, 0), scale_factor=0.1)
                 mlab.show()
 
     def generate_r_neighbor(self, r=None, show_result=False):
         if r is None:
-            r = self.range / 20
+            r = self.range / 40
         else:
             assert 0 < r < self.range
 
@@ -649,22 +652,42 @@ class PointCloud:
                 k += 1
 
         if show_result:
-            for i in range(10):
-                j = np.random.choice(self.nb_points, 1)  # point
+            for i in range(5):
+                j = np.random.choice(self.nb_points, 1)  # random point index
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                 neighbor_idx = self.point_rneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-
+                # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
+                              self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
                               color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.02, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                              scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
 
+                # show the whole point cloud
                 mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 0.0001 + self.range * 0.05,
-                              color=(0, 1, 0), scale_factor=0.1)
+                              self.position[:, 2] * 10**-9 + self.range * 0.005,
+                              color=(0, 1, 0), scale_factor=1)
+
+                # show the sphere on the neighbor
+                mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                              self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
+                              transparent=True, opacity=0.3)
                 mlab.show()
+
+    def down_sample(self, number_of_downsample=10000):
+        choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
+        self.position = self.position[choice_idx]
+
+        self.min_limit = np.amin(self.position, axis=0)  # 1x3
+        self.max_limit = np.amax(self.position, axis=0)  # 1x3
+        self.range = self.max_limit - self.min_limit
+        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
+        self.center = np.mean(self.position, axis=0)  # 1x3
+        self.nb_points = np.shape(self.position)[0]
+        self.visible = self.position
+        print(self.nb_points, ' points', 'range:', self.range)
 
 
 def point2plane_dist(point, plane):

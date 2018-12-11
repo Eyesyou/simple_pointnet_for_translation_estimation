@@ -36,7 +36,7 @@ class PointCloud:
         self.position = one_pointcloud  # nx3 numpy array
         self.center = np.mean(self.position, axis=0)  # 1x3
         self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position
+        self.visible = self.position  # for projection use
         self.plane = None
         self.plane_origin = None
         self.plane_project_points = None
@@ -310,7 +310,6 @@ class PointCloud:
 
                 neighbor_idx = self.point_kneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-                print('neighbor_idx:\n', neighbor_idx)
                 # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
@@ -580,6 +579,14 @@ def point2plane_dist(point, plane):
     denominator = math.sqrt(a*a+b*b+c*c)
 
     return numerator/denominator
+
+
+def nor4vec(vector):
+    """
+    :param vector: B x 4
+    :return: B x 4
+    """
+    return vector/np.linalg.norm(vector, axis=1)[:,np.newaxis]
 
 
 def point2line_dist(point, line_origin, line_vector):
