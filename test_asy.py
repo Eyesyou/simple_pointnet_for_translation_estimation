@@ -6,6 +6,7 @@ from scipy.spatial import distance
 import math
 from plyfile import PlyData, PlyElement
 
+
 class OctNode:
     def __init__(self, coordinates, size, data=None):
         assert isinstance(coordinates, np.ndarray)
@@ -42,8 +43,9 @@ class PointCloud:
         self.plane_project_points = None
         self.root = None
         self.depth = 0
-        self.point_kneighbors = None  # n x k  k is the index of the neighbor points
-        self.point_rneighbors = None  # n x (0-inf)  the index of the neighbor points , number may differ according to different points
+        self.point_kneighbors = None  # n x k , k is the index of the neighbor points
+        self.point_rneighbors = None  # n x (0 to nb_points), the index of the neighbor points,
+        # number may differ according to different points
         print(self.nb_points, ' points', 'range:', self.range)
 
     def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
@@ -306,7 +308,7 @@ class PointCloud:
         if show_result:
             for i in range(10):  # number of pictures you want to show
                 j = np.random.choice(self.nb_points, 1)  # point
-                fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+                mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                 neighbor_idx = self.point_kneighbors[j, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
@@ -330,7 +332,7 @@ class PointCloud:
             assert 0 < r < self.range
 
         p_distance = distance.cdist(self.position, self.position)
-        idx = np.where((p_distance < r) & (p_distance > 0))  # choose axis 0 or axis 1
+        idx = np.where((p_distance < r) & (p_distance != 0))  # choose axis 0 or axis 1
 
         _, uni_idx, nb_points_with_neighbors = np.unique(idx[0], return_index=True, return_counts=True)
 
@@ -516,14 +518,18 @@ def apply_np_homo(batch_point_cloud, homo='random'):
 def compute_covariance_mat(numpy_arr):
     """
 
-    :param numpy_arr:  n x k array
-    :return: kxk  array
+    :param numpy_arr:  b x n x k array, b is the key points number, n is the nb_neighbors,
+     maybe nan because of different nb_neighbor, k is the dimension
+    :return: b x k x k  covariance array
     """
-    n = numpy_arr.shape[0]
+    b = numpy_arr.shape[0]  # b
+    n = numpy_arr.shape[1]  # n
+    tmp = np.ones(shape=(b, n, n)) @ numpy_arr
+    # tmp = np.tensordot(np.ones(shape=(b, n, n)), numpy_arr, axes=(2, [1, 2]))  # 2 x 4 x 4 dot 2 x 4 x 3
+    a = numpy_arr - 1/n * tmp
+    # todo: delete nan effect
 
-    a = numpy_arr - 1/n * np.dot(np.ones(shape=(n, n)), numpy_arr)
-
-    return np.dot(np.transpose(a), a)*1/n
+    return np.transpose(a, axes=[0, 2, 1]) @ a * 1/n   #  b x k x n @ # b x n x k = b x k x k
 
 
 def tf_cov_mat(tensor):
@@ -602,25 +608,28 @@ def point2line_dist(point, line_origin, line_vector):
 
 
 if __name__ == "__main__":
-    A = np.random.random([70, 3])
-    A = np.array(A)
+    A = np.random.random([1, 4, 3])
+    B = np.random.random([1, 4, 3])  # n x (0 to nb_points), the index of the neighbor points,
+    B[0, 3, :] = np.nan
+    C = np.concatenate((A, B), axis=0)  # 2 x 4 x 3
+    print("C:\n", C)
+    print("diff neighbors compute_covariance_mat:\n", compute_covariance_mat(C))
     # A = PointCloud(A)
     # A.generate_k_neighbor(show_result=True)
-    plydata = PlyData.read('./pointcloud/lab work peace by reconstruction.ply')
-
-    vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
-    vertex = vertex[:, 0:3]
-    pc = PointCloud(vertex)
-    pc.down_sample()
-    pc.generate_r_neighbor(show_result=True)
+    # plydata = PlyData.read('./pointcloud/lab work peace by reconstruction.ply')
+    #
+    # vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+    # vertex = vertex[:, 0:3]
+    # pc = PointCloud(vertex)
+    # pc.down_sample()
+    # pc.generate_r_neighbor(show_result=True)
 
     # print('vertext[:].tolist():\n', plydata['vertex'][:])
     # A = tf.constant(A, dtype=tf.float64)
     # A = tf_cov_mat(A)
-    #
     # with tf.Session() as sess:
     #     b = sess.run(A)
-    #
     #     print(b)
     pass
+
     # test_uniform_rotation()

@@ -13,186 +13,8 @@ from show_samples import plotit
 import show_pc
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
 from mayavi import mlab
+from show_pc import PointCloud
 LOG_FOUT = open('log_train.txt', 'w')
-
-
-class PointCloud:
-    def __init__(self, one_pointcloud):
-        assert isinstance(one_pointcloud, np.ndarray)
-        one_pointcloud = np.squeeze(one_pointcloud)
-        assert one_pointcloud.shape[1] == 3
-        self.min_limit = np.amin(one_pointcloud, axis=0)  # 1x3
-        self.max_limit = np.amax(one_pointcloud, axis=0)  # 1x3
-        self.range = self.max_limit-self.min_limit
-        self.range = np.sqrt(self.range[0]**2+self.range[1]**2+self.range[2]**2)  # diagonal distance
-        self.position = one_pointcloud     # nx3
-        self.center = np.mean(self.position, axis=0)  # 1x3
-        self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position
-        self.plane = None
-        self.plane_origin = None
-        self.plane_project_points = None
-        print(self.nb_points, ' points', 'range:', self.range)
-
-    def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
-        """
-        :param plane:  the plane you want to project the point cloud into, and generate the image-like grid,
-        define the normal of the plane is to the direction of point cloud center
-        :param n:
-        :param grid_resolution:
-        :return:
-        """
-        if plane is None:
-            # generate a random plane whose distance to the center bigger than self.range
-            # d = abs(Ax+By+Cz+D)/sqrt(A**2+B**2+C**2)
-            plane_normal = -0.5+np.random.random(size=[3, ])  # random A B C for Ax+By+Cz+D=0
-            A = plane_normal[0]
-            B = plane_normal[1]
-            C = plane_normal[2]
-            D = -(A*self.center[0]+B*self.center[1]+C*self.center[2])+(np.random.binomial(1, 0.5)*2-1) * \
-                self.range*np.sqrt(A**2+B**2+C**2)
-
-        else:
-            A = plane[0]
-            B = plane[1]
-            C = plane[2]
-            D = plane[3]
-
-        # compute the project point of center in the grid plane:
-        t = (A*self.center[0]+B*self.center[1]+C*self.center[2]+D)/(A**2+B**2+C**2)
-        x0 = self.center[0] - A * t  # project point in the plane
-        y0 = self.center[1] - B * t
-        z0 = self.center[2] - C * t
-        self.plane_origin = [x0, y0, z0]
-        if (self.center[0]-x0)/A < 0:
-            A = -A
-            B = -B
-            C = -C
-            D = -D
-        self.plane = [A, B, C, D]
-        try:
-            assert math.isclose((self.center[0]-x0)/A, (self.center[1] - y0)/B) and \
-                   math.isclose((self.center[1]-y0)/B, (self.center[2] - z0)/C) and (self.center[0]-x0)/A > 0
-        except AssertionError:
-            print('AssertionError', (self.center[0]-x0)/A, (self.center[1] - y0)/B, (self.center[2] - z0)/C, A, B, C, D)
-        x1 = x0                             # Parallelogram points of the grid,define x1,y1,z1 by plane function and
-        a = 1 + B ** 2 / C ** 2             # range distance limitation
-        b = 2*B/C*(z0+(D+A*x1)/C)-2*y0
-        c = y0**2-self.range**2/4+(x1-x0)**2+(z0+(D+A*x1)/C)**2
-        y1 = np.roots([a, b, c])     # Unary two degree equation return two root
-        if np.isreal(y1[0]):
-            y1 = y1[0]
-        else:
-            print('not real number')
-        z1 = -(D+A*x1+B*y1)/C
-        # the y direction of the plane, this is a vector
-        y_nomal = np.cross([self.center[0]-x0, self.center[1]-y0, self.center[2]-z0], [x1-x0, y1-y0, z1-z0])
-
-        # the minimal distance for every grid, the second index store the point label
-
-        min_dist = 10*self.range*np.ones(shape=[grid_resolution[0], grid_resolution[1], 2])
-        point_label = np.zeros(shape=(self.nb_points, ))
-        for i in range(self.nb_points):
-
-            t_ = (A * self.position[i, 0] + B * self.position[i, 1] + C * self.position[i, 2] + D) \
-                 / (A ** 2 + B ** 2 + C ** 2)
-            project_point = np.asarray([self.position[i, 0] - A * t_, self.position[i, 1] - B * t_,
-                                        self.position[i, 2] - C * t_])
-
-            project_y = point2line_dist(project_point, np.asarray([x0, y0, z0]),
-                                        np.asarray([x1-x0, y1-y0, z1-z0]))
-            project_x = np.sqrt(np.sum(np.square(project_point-np.asarray([x0, y0, z0])))-project_y**2)
-
-            # print('project x', project_x, 'project y', project_y)
-            if (project_point[0]-x0)*(x1-x0)+(project_point[1]-y0)*(y1-y0)+(project_point[2]-z0)*(z1-z0) >= 0:
-                # decide if it is first or fourth quadrant
-                if np.dot(y_nomal, project_point-np.asarray([x0, y0, z0])) < 0:
-                    # fourth quadrant
-                    project_y = -project_y
-
-            else:
-                project_x = - project_x
-                if np.dot(y_nomal, project_point-np.asarray([x0, y0, z0])) < 0:
-                    # third quadrant
-                    project_y = -project_y
-
-            pixel_width = self.range * 2 / grid_resolution[0]
-            pixel_height = self.range * 2 / grid_resolution[1]
-            distance = point2plane_dist(self.position[i, :], [A, B, C, D])
-            index_x = int(grid_resolution[0]/2 + np.floor(project_x/pixel_width))
-            index_y = int(grid_resolution[1]/2 + np.floor(project_y/pixel_height))
-            try:
-                if distance < min_dist[index_x, index_y, 0]:
-                    min_dist[index_x, index_y, 0] = distance
-                    # if other points is already projected, set it to 0
-                    if np.equal(np.mod(min_dist[index_x, index_y, 1], 1), 0):
-                        old_point_index = min_dist[index_x, index_y, 1]
-                        old_point_index = int(old_point_index)
-                        point_label[old_point_index] = 0
-                    min_dist[index_x, index_y, 1] = i  # new point index
-                    point_label[i] = 1  # visible points
-            except AssertionError:
-                print('AssertionError:', np.floor(project_x/pixel_width), pixel_width)
-
-        if n is not None:
-            # sample the visible points to given number of points
-            medium = self.position[point_label == 1]
-            try:
-                assert medium.shape[0] >= n  # sampled points have to be bigger than n
-            except AssertionError:
-                print('sampled points number is:', medium.shape[0])
-                raise ValueError('value error')
-            np.random.shuffle(medium)   # only shuffle the first axis
-            self.visible = medium[0:n, :]
-        else:
-            self.visible = self.position[point_label == 1]
-
-        t_1 = (A * self.visible[:, 0] + B * self.visible[:, 1] + C * self.visible[:, 2] + D) \
-             / (A ** 2 + B ** 2 + C ** 2)
-        t_1 = np.expand_dims(t_1, axis=1)
-
-        self.plane_project_points = np.concatenate([np.expand_dims(self.visible[:, 0], axis=1) - A * t_1,
-                                                    np.expand_dims(self.visible[:, 1], axis=1) - B * t_1,
-                                                    np.expand_dims(self.visible[:, 2], axis=1) - C * t_1], axis=1)
-
-    def show(self, not_show=False, scale=0.005):
-        mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
-        fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2], self.position[:, 2]*0.0001+ self.range*scale,
-                            colormap='Spectral', scale_factor=1)
-        if not not_show:
-            mlab.show()
-        else:
-            return fig
-
-    def add_noise(self, factor=1/100):
-        """
-        jitter noise for every points in the point cloud
-        :param factor:
-        :return:
-        """
-        noise = np.random.random([self.nb_points, 3]) * factor * self.range
-        self.position += noise
-
-    def add_outlier(self, factor=1/100):
-        """
-        randomly delete points and make it to be the outlier
-        :param factor:
-        :return:
-        """
-
-        inds = np.random.choice(np.arange(self.nb_points), size=int(factor*self.nb_points))
-        self.position[inds] = self.center + -self.range/6 + self.range/3 * np.random.random(size=(len(inds), 3))
-
-    def normalize(self):
-        self.position -= self.center
-        self.position /= self.range
-        self.center = np.mean(self.position, axis=0)
-        self.min_limit = np.amin(self.position, axis=0)
-        self.max_limit = np.amax(self.position, axis=0)
-        self.range = self.max_limit-self.min_limit
-        self.range = np.sqrt(self.range[0]**2+self.range[1]**2+self.range[2]**2)
-        print('center: ', self.center, 'range:', self.range)
-
 
 # pc = np.loadtxt('monsterbladecaranya.txt')  # 4*1024 x 3
 # pc /= 2
@@ -459,6 +281,27 @@ def get_bn_decay(batch):
         staircase=True)
     bn_decay = tf.minimum(0.99, 1 - bn_momentum)
     return bn_decay
+
+
+def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
+    """
+
+    :param point_cloud: Bxnx3 , output B x k  feature, k is the feature dimension
+    :return:
+    """
+    batchsize = point_cloud.get_shape()[0].value
+    nb_points = point_cloud.get_shape()[0].value
+    nb_key_pts = tf.int(nb_points*key_pts_percentage)
+    min_limit = tf.reduce_min(point_cloud, axis=1)  # Bx1x3
+    max_limit = tf.reduce_max(point_cloud, axis=1)  # Bx1x3
+    pts_range = tf.squeeze((max_limit-min_limit), axis=1) #B x3
+    pts_range = tf.sqrt(tf.reduce_sum(tf.square(pts_range), axis=1)) # Bx1
+    multi_radius = pts_range*radius_scale # Bx3
+
+    pts_r_neighbor = tf.
+
+
+    weighted_covariance_mat =
 
 
 def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
@@ -1068,6 +911,6 @@ if __name__ == "__main__":
 
     # train()
 
-    test(os.path.join('tmp', "model.ckpt"), show_result=True)
+    # test(os.path.join('tmp', "model.ckpt"), show_result=True)
 
     LOG_FOUT.close()

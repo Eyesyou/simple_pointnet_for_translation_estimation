@@ -112,18 +112,17 @@ if __name__ =="__main__":
     pc = np.loadtxt('cowbunnyprojectorshaft.txt')
     pc = np.reshape(pc, (4, 1024, 3))
 
-
     tile_size = 1  # 4
     pc_tile = np.tile(pc, (tile_size, 1, 1))  # (4*4) x 1024 x 3
 
     sess = tf.Session()
     pc_tile = tf.convert_to_tensor(pc_tile, dtype=tf.float32)
 
-    pc_tile = tf.slice(pc_tile,(3,0,0),[1,1024,3])
+    pc_tile = tf.slice(pc_tile, (3, 0, 0), [1, 1024, 3])
     print(tf.shape(pc_tile))
     print(pc_tile.get_shape().as_list())
     with sess as se:
         #plotit(pc_tile)
-        pc_tile=sess.run(pc_tile)
+        pc_tile = sess.run(pc_tile)
         print(pc_tile.shape)
         show_pc.show_all(pc_tile,color='y')
