@@ -101,7 +101,7 @@ def show_all(point_cloud, color=None , plot_plane=False, plot_arrow=True):
 
 
 def show_trans(point_cloud1, point_cloud2, color1=None, color2=None, color3=None, color4=None,
-               color5=None, color6=None, color7=None, color8=None, use_mayavi=True):
+               color5=None, color6=None, color7=None, color8=None, use_mayavi=True, scale=4):
     """
     plot a batch of point clouds
     :param point_cloud1: Bx1024x3 point_cloud2: Bx1024x3 np array
@@ -117,10 +117,11 @@ def show_trans(point_cloud1, point_cloud2, color1=None, color2=None, color3=None
     ax.set_axis_off()
     B = point_cloud1.shape[0] #batch
     colorset = [color1, color2, color3, color4, color5, color6, color7, color8]
+    dark_multiple = 2.5   # greater than 1
     for idx, i in enumerate(colorset):
         if idx % 2 == 0 and i is None:
-            colorset[idx] = tuple(0.5*np.random.random([3, ]))
-            colorset[idx+1] = [i * 2 for i in colorset[idx]]
+            colorset[idx] = tuple((1/dark_multiple)*np.random.random([3, ]))
+            colorset[idx+1] = [i * dark_multiple for i in colorset[idx]]
 
     colorset = [tuple(i) for i in colorset]
 
@@ -131,29 +132,29 @@ def show_trans(point_cloud1, point_cloud2, color1=None, color2=None, color3=None
                 ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[0], s=5)
                 ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[1], s=5)
             else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], color=colorset[0], scale_factor=2)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], color=colorset[1], scale_factor=2)
+                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[0], scale_factor=1)
+                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[1], scale_factor=1)
         elif i % 4 == 1:
             if not use_mayavi:
                 ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[2], s=5)
                 ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[3], s=5)
             else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], color=colorset[2], scale_factor=2)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], color=colorset[3], scale_factor=2)
+                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[2], scale_factor=1)
+                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[3], scale_factor=1)
         elif i % 4 == 2:
             if not use_mayavi:
                 ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[4], s=5)
                 ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[5], s=5)
             else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], color=colorset[4], scale_factor=2)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], color=colorset[5], scale_factor=2)
+                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[4], scale_factor=1)
+                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[5], scale_factor=1)
         elif i % 4 == 3:
             if not use_mayavi:
                 ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[6], s=5)
                 ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[7], s=5)
             else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], color=colorset[6], scale_factor=2)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], color=colorset[7], scale_factor=2)
+                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[6], scale_factor=1)
+                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[7], scale_factor=1)
 
     Axes3D.grid(ax, b=False)
     if use_mayavi:
@@ -365,7 +366,7 @@ class PointCloud:
         define the normal of the plane is to the direction of point cloud center
         :param n:
         :param grid_resolution:
-        :return:
+        :return: nothing, update self.visible points
         """
         if plane is None:
             # generate a random plane whose distance to the center bigger than self.range
@@ -482,11 +483,12 @@ class PointCloud:
                                                     np.expand_dims(self.visible[:, 1], axis=1) - B * t_1,
                                                     np.expand_dims(self.visible[:, 2], axis=1) - C * t_1], axis=1)
 
-    def show(self, not_show=False, scale=0.005):
+    def show(self, not_show=False, scale=0.4):
         mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
         fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                            self.position[:, 2] * 10**-9 + self.range * scale,
-                            colormap='Spectral', scale_factor=1)
+                            self.position[:, 2] * 10**-2 + 2, color=(0, 1, 0),  # +self.range * scale
+                            scale_factor=scale)   # colormap='Spectral', color=(0, 1, 0)
+
         if not not_show:
             mlab.show()
         else:
@@ -636,12 +638,10 @@ class PointCloud:
                               color=(0, 1, 0), scale_factor=0.1)
                 mlab.show()
 
-    def generate_r_neighbor(self, r=None, show_result=False):
-        if r is None:
-            r = self.range / 30  # default radius, vary acoording to the range of point cloud
-        else:
-            assert 0 < r < self.range
+    def generate_r_neighbor(self, rate=0.05, show_result=False):
 
+        assert 0 < rate < 1
+        r = self.range * rate
         p_distance = distance.cdist(self.position, self.position)
         idx = np.where((p_distance < r) & (p_distance > 0))  # choose axis 0 or axis 1
 
@@ -658,29 +658,61 @@ class PointCloud:
                 k += 1
 
         if show_result:
-            for i in range(5):
-                j = np.random.choice(self.nb_points, 1)  # random point index
+            if self.keypoints is not None:
+
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
-                neighbor_idx = self.point_rneighbors[j, :]
+                neighbor_idx = self.point_rneighbors[self.keypoints, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
                 # show the neighbor point cloud
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
-                              self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
-                              color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                              self.position[neighbor_idx, 0] * 10 ** -9 + self.range * 0.005,
+                              color=(1, 1, 0),
+                              scale_factor=2, figure=fig2)  # color can be tuple(np.random.random((3,)).tolist())
 
                 # show the whole point cloud
                 mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 10**-9 + self.range * 0.005,
-                              color=(0, 1, 0), scale_factor=1)
+                              self.position[:, 2] * 10 ** -9 + self.range * 0.005,
+                              color=(0, 1, 0), scale_factor=1.5)
 
                 # show the sphere on the neighbor
-                mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
-                              self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
-                              transparent=True, opacity=0.3)
+                mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1], self.position[self.keypoints, 2],
+                              self.position[self.keypoints, 0] * 10 ** -9 + r * 2, color=(0, 0, 1), scale_factor=1,
+                              transparent=True, opacity=0.025)  # 0.1 for rate 0.05, 0.04 for rate 0.1, 0.025 for rate 0.15
+
+                # show the key points
+                mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1],
+                              self.position[self.keypoints, 2],
+                              self.position[self.keypoints, 0] * 10 ** -9 + self.range * 0.005,
+                              color=(1, 0, 0), scale_factor=2,)
+
                 mlab.show()
+
+            else:
+                for i in range(5):
+                    j = np.random.choice(self.nb_points, 1)  # choose one random point index
+                    fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+
+                    neighbor_idx = self.point_rneighbors[j, :]
+                    neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
+                    # show the neighbor point cloud
+                    mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
+                                  self.position[neighbor_idx, 2],
+                                  self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
+                                  color=tuple(np.random.random((3,)).tolist()),
+                                  scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+
+                    # show the whole point cloud
+                    mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                                  self.position[:, 2] * 10**-9 + self.range * 0.005,
+                                  color=(0, 1, 0), scale_factor=1)
+
+                    # show the sphere on the neighbor
+                    mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                                  self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
+                                  transparent=True, opacity=0.3)
+                    mlab.show()
 
     def down_sample(self, number_of_downsample=10000):
         choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
@@ -694,7 +726,7 @@ class PointCloud:
         self.visible = self.position
         print('after down_sampled points:', self.nb_points, ' points', 'range:', self.range)
 
-    def compute_covariance_mat(self, neighbor_pts=None, weight = None):
+    def compute_covariance_mat(self, neighbor_pts=None, rate=0.05):
         """
         weighted covariance matrix, also scatter matrix
         :param neighbor_pts: b x k x d array, b is the number of points , k is the nb_neighbors,
@@ -714,7 +746,7 @@ class PointCloud:
 
         if neighbor_pts == 'point_rneighbors':
             print('using ball query to find key points')
-            self.generate_r_neighbor()
+            self.generate_r_neighbor(rate=rate)
             whole_weight = 1 / (~np.isnan(self.point_rneighbors)).sum(1)  # do as ISS paper said
             whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
             # todo: this is an inefficient way
@@ -741,15 +773,18 @@ class PointCloud:
             assert not np.isnan(result.any())
         return result
 
-    def compute_key_points(self, percentage=0.1, show_result=False):
+    def compute_key_points(self, percentage=0.1, show_result=False, rate=0.05):
         """
         Intrinsic shape signature key point detection
         :param percentage:  10%
-        :return:
+        :param show_result:
+        :param rate:
+        :return:  return nothing, store the key points in self.keypoints
         """
+
         # todo resolution control, voxelization for the key p
         nb_key_pts = int(self.nb_points*percentage)
-        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors')  # nx3x3
+        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', rate=rate)  # nx3x3
 
         # compute the eigen value, the smallest eigen value is the variation of the point
         eig_vals = np.linalg.eigvals(self.weighted_covariance_matix)
@@ -772,7 +807,7 @@ class PointCloud:
             # show the whole point cloud
             mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           self.position[:, 2] * 10 ** -9 + self.range * 0.005,
-                          color=(0, 1, 0), scale_factor=1)
+                          color=(0, 1, 0), scale_factor=1.5)
 
             mlab.show()
 
@@ -831,115 +866,52 @@ def show_projection(pc_path='', nb_sample=20000, show_origin=False):
     if show_origin:
         # the origin point cloud:
         m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-        size = pc_class.position[:, 2]*0.001+1
+        size = pc_class.position[:, 2]*10**-2+1
 
-        mlab.points3d(pc_class.position[:, 0], pc_class.position[:, 1], pc_class.position[:, 2], size, colormap='Spectral', scale_factor=2)
+        mlab.points3d(pc_class.position[:, 0], pc_class.position[:, 1], pc_class.position[:, 2],
+                      size, colormap='Spectral', scale_factor=2)
         # mlab.show()
         mlab.gcf().scene.parallel_projection = True  # parallel projection
         f = mlab.gcf()  # this two line for mlab.screenshot to work
         f.scene._lift()
         img = mlab.screenshot(figure=m_fig)
         mlab.close()
-        ax = fig.add_subplot(1, 4, 1)
+        ax = fig.add_subplot(2, 3, 1)
         ax.imshow(img)
         ax.set_axis_off()
 
-        pc_class.half_by_plane(grid_resolution=(1024, 1024))
+        for i in range(5):
+            pc_class.half_by_plane(grid_resolution=(400, 400))
 
-        x = 30  # cone origin
-        y = -30
-        z = 200
-        u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
-        v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
-        w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
-        vector = np.stack([u, v, w])
-        vector = vector / np.linalg.norm(vector) * 280
-        u = vector[0]
-        v = vector[1]
-        w = vector[2]
+            x = 30  # cone offset todo you have to manually ajust the cone origin
+            y = -30
+            z = 50
+            u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
+            v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
+            w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
+            vector = np.stack([u, v, w])
+            vector = vector / np.linalg.norm(vector) * 280
+            u = vector[0]
+            v = vector[1]
+            w = vector[2]
 
-        m_fig2 = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
+            m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
 
-        size = pc_class.visible[:, 2] * 0.001 + 1
-        mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2], size,
-                      colormap='Spectral', scale_factor=5, figure=m_fig2)
+            mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2],
+                          pc_class.visible[:, 2]*10**-2+1, colormap='Spectral', scale_factor=2, figure=m_fig)
 
-        # mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
-        #               figure=m_fig2, scale_factor=1, line_width=2.0)
+            mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
+                          figure=m_fig, scale_factor=0.1, line_width=2.0)    # color map can be RdYlGn, Spectral
 
-        mlab.gcf().scene.parallel_projection = True  # parallel projection
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        # mlab.show()  # for testing
-        img = mlab.screenshot(figure=m_fig2)
-        mlab.close()
-        ax = fig.add_subplot(1, 4, 2)
-        ax.imshow(img)
-        ax.set_axis_off()
-
-        pc_class.half_by_plane(grid_resolution=(1024, 1024))
-
-        x = 30
-        y = -30
-        z = 200
-        u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
-        v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
-        w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
-        vector = np.stack([u, v, w])
-        vector = vector / np.linalg.norm(vector) * 280
-        u = vector[0]
-        v = vector[1]
-        w = vector[2]
-        m_fig3 = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-
-        size = pc_class.visible[:, 2] * 0.001 + 1
-        mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2], size,
-                      colormap='Spectral', scale_factor=5, figure=m_fig3)
-
-        # mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
-        #               figure=m_fig3, scale_factor=1, line_width=2.0)
-
-        mlab.gcf().scene.parallel_projection = True  # parallel projection
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        # mlab.show()  # for testing
-        img = mlab.screenshot(figure=m_fig3)
-        mlab.close()
-        ax = fig.add_subplot(1, 4, 3)
-        ax.imshow(img)
-        ax.set_axis_off()
-
-        pc_class.half_by_plane(grid_resolution=(1024, 1024))
-
-        x = 30
-        y = -30
-        z = 200
-        u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
-        v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
-        w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
-        vector = np.stack([u, v, w])
-        vector = vector / np.linalg.norm(vector) * 280
-        u = vector[0]
-        v = vector[1]
-        w = vector[2]
-        m_fig4 = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-
-        size = pc_class.visible[:, 2] * 0.001 + 1
-        mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2], size,
-                      colormap='Spectral', scale_factor=5, figure=m_fig4)
-
-        # mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
-        #               figure=m_fig4, scale_factor=1, line_width=0.1)
-
-        mlab.gcf().scene.parallel_projection = True  # parallel projection
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        # mlab.show()  # for testing
-        img = mlab.screenshot(figure=m_fig4)
-        mlab.close()
-        ax = fig.add_subplot(1, 4, 4)
-        ax.imshow(img)
-        ax.set_axis_off()
+            mlab.gcf().scene.parallel_projection = True  # parallel projection
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            # mlab.show()  # for testing
+            img = mlab.screenshot(figure=m_fig)
+            mlab.close()
+            ax = fig.add_subplot(2, 3, i+2)
+            ax.imshow(img)
+            ax.set_axis_off()
 
         # # the projected point cloud
         # m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
@@ -959,7 +931,7 @@ def show_projection(pc_path='', nb_sample=20000, show_origin=False):
         # ax.imshow(img)
         # ax.set_axis_off()
 
-        # plt.subplots_adjust(wspace=0, hspace=0)
+        plt.subplots_adjust(wspace=0, hspace=0)
         plt.show()
 
     else:
@@ -1031,16 +1003,20 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
-    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/lab3/final.ply'
+
+    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab4/final.ply'
 
     plydata = PlyData.read(pc_path1)
     vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
     vertex = vertex[:, 0:3]
-
     pc = PointCloud(vertex)
-    pc.down_sample(number_of_downsample=1024)
-    a = time.time()
-    pc.compute_key_points(percentage=0.1, show_result=True)
-    print('time:', time.time()-a)
-    # print(pc.compute_covariance_mat())
-    # show_projection(pc_path=pc_path1, nb_sample=20000, show_origin=False)
+    pc.down_sample(number_of_downsample=10000)
+    pc.show()
+
+    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    # pc = np.loadtxt(base_path + '/lab4/lab4_project' + str(1) + '.txt')
+    # pc = PointCloud(pc)
+    # pc.compute_key_points(rate=0.05, show_result=True)
+    # pc.generate_r_neighbor(rate=0.15, show_result=True)
+
+    # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=True)

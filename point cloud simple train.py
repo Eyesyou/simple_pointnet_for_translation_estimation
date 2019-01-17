@@ -33,19 +33,20 @@ decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
 decay_rate = 0.999
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
-max_epoch = 100  # 200
+max_epoch = 50  # 200
 nb_classes = 4
 nb_points = 1024
+key_pts_percentage = 0.1
 # tile_size = 256   # total
 # pc_tile = np.tile(pc, (tile_size, 1, 1))   # tile_size*4 x 1024 x 3
 # pc_label = np.tile(np.array([0, 1, 2, 3]), tile_size)
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/train_set4noiseout/project_data.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/project_data.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
-
+pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100
-ppc = PointCloud(pc_tile[1, :, :])  # check the pc
+
 
 # <editor-fold desc="use this snipet to make">
 # for i in range(pc_tile.shape[0]):
@@ -90,10 +91,173 @@ def log_string(out_str):
     print(out_str)
 
 
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
+        else:
+            print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
+        return result
+    return timed
+
+
+def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
+    """
+    get local feature from pointcloud using multi scale features
+    :param point_cloud: Bxnx3 tensor
+    :return: output B x k  feature tensor, k is the feature dimension
+    """
+    # print('inputshape:', point_cloud.get_shape()[:])
+    batchsize = point_cloud.get_shape()[0].value
+    nb_points = point_cloud.get_shape()[1].value
+    nb_key_pts = tf.to_int32(nb_points*key_pts_percentage)
+    min_limit = tf.reduce_min(point_cloud, axis=1)  # Bx3
+    max_limit = tf.reduce_max(point_cloud, axis=1)  # Bx3
+    pts_range = max_limit-min_limit  # Bx3
+    pts_range = tf.sqrt(tf.reduce_sum(tf.square(pts_range), axis=1, keepdims=True))  # Bx1
+    multi_radius = pts_range*radius_scale  # Bx3
+    # print('multi_radius :', multi_radius)
+    l2_norm = tf.reduce_sum(point_cloud*point_cloud, axis=2)  # Bxn
+    l2_norm = tf.reshape(l2_norm, [batchsize, -1, 1])   # B x 1 x 1
+
+    pts_distance_mat = tf.sqrt(l2_norm-2*(point_cloud @ tf.transpose(point_cloud, perm=(0, 2, 1))) +
+                               tf.transpose(l2_norm, perm=(0, 2, 1)))  # Bxnxn
+    pts_distance_mat = tf.matrix_set_diag(pts_distance_mat, tf.zeros(pts_distance_mat.shape[0:-1]), name=None)
+    idx1 = tf.where((pts_distance_mat < multi_radius[:, 0, tf.newaxis, tf.newaxis]) & (pts_distance_mat > 10**-7) & ~(tf.is_nan(pts_distance_mat)))  # ? x 3
+    idx2 = tf.where((pts_distance_mat < multi_radius[:, 1, tf.newaxis, tf.newaxis]) & (pts_distance_mat > 10**-7) & ~(tf.is_nan(pts_distance_mat)))  # ? x 3
+    idx3 = tf.where((pts_distance_mat < multi_radius[:, 2, tf.newaxis, tf.newaxis]) & (pts_distance_mat > 10**-7) & ~(tf.is_nan(pts_distance_mat)))  # ? x 3
+
+    pts_r_neighbor_idx1 = tf.py_func(get_pts_nei, [idx1, batchsize, nb_points], tf.int32)  # b x nb_key_pts x max_nb_pts_neighbors
+    pts_r_neighbor_idx2 = tf.py_func(get_pts_nei, [idx2, batchsize, nb_points], tf.int32)  # b x nb_key_pts x max_nb_pts_neighbors
+    pts_r_neighbor_idx3 = tf.py_func(get_pts_nei, [idx3, batchsize, nb_points], tf.int32)
+
+    pts_r_cov = tf.py_func(get_pts_cov, [point_cloud, pts_r_neighbor_idx2], tf.float32)  # b x n x 3 x 3
+    eigen_val, _ = tf.linalg.eigh(pts_r_cov)  # b x n x 3
+    _, key_pts_idx = tf.nn.top_k(eigen_val[:, :, 0], k=nb_key_pts, sorted=False)  # b x nb_key_pts
+
+    key_pts_idx = tf.expand_dims(key_pts_idx, axis=-1)  # bx nb_key_pts x 1
+    the_range = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(batchsize), axis=-1), (1, nb_key_pts)), axis=-1)  # bx nb x 1
+
+    key_pts_idxs = tf.concat([the_range, key_pts_idx], axis=-1)   # b x nb_key_pts x 2  (batch, row)
+    # print('key_pts_idx shape:', key_pts_idx.shape)
+    key_eig_val = tf.gather_nd(eigen_val, key_pts_idxs)  # b x nb_key_pts x 3
+
+    # key_pts_cov2 = tf.gather_nd(pts_r_cov, key_pts_idxs)  # b x nb_key_pts x 3 x 3
+    key_pts_cov1 = tf.py_func(get_pts_cov, [point_cloud, tf.gather_nd(pts_r_neighbor_idx1, key_pts_idxs)], tf.float32)
+    key_pts_cov3 = tf.py_func(get_pts_cov, [point_cloud, tf.gather_nd(pts_r_neighbor_idx3, key_pts_idxs)], tf.float32)
+    key_eig_val2 = key_eig_val
+    key_eig_val1, _ = tf.linalg.eigh(key_pts_cov1)  # b x nb_key_pts x 3
+    key_eig_val3, _ = tf.linalg.eigh(key_pts_cov3)  # b x nb_key_pts x 3
+    concat = tf.concat([key_eig_val1, key_eig_val2, key_eig_val3], axis=-1)  # b x nb_key_pts x 9
+    concat = tf.expand_dims(concat, axis=-1)                        # b x nb_key_pts x 9 x 1
+    concat = tf.reshape(concat, [batchsize, nb_key_pts, 9, 1])
+    net = tf.layers.conv2d(inputs=concat, filters=128, kernel_size=[1, 9])  # b x nb_key_pts x 1 x 128
+    net = tf.layers.conv2d(inputs=net, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+    net = tf.layers.conv2d(inputs=net, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+
+    net = tf.layers.max_pooling2d(net, pool_size=(int(nb_points*key_pts_percentage), 1), strides=1)  # b x 1 x 1 x 256
+    net = tf.reshape(net, [batchsize, -1])  # b x 256
+    return net
+
+
+def get_local_feature(local_eigs):
+    """
+
+    :param local_eigs:
+    :return:
+    """
+
+
+def get_pts_nei(idx, batch, nb_points):
+    """
+
+    :param idx:  ? x 3
+    :param batch:  integer
+    :param nb_points: interger
+    :return: batch x nb_points x max_nb_pts_neighbors points index
+    """
+
+    """
+    get max_number of points neighbors
+    """
+    b = idx[:, 0]  # shape: ?
+    pt = idx[:, 0:2]  # ? x 2
+
+    _, mid_idx, counts = np.unique(b, return_index=True, return_counts=True)
+    max_nb_pts_neighbors = 0
+    # print('max_nb_pts_neighbors:', max_nb_pts_neighbors)
+    for i in range(batch):
+        if i == 0:
+            this_batch, remain = pt[:counts[i], :], pt[counts[i]:, :]
+        else:
+            this_batch, remain = remain[:counts[i], :], remain[counts[i]:, :]
+        # print('this batch:', this_batch)
+        _,  current_max = np.unique(this_batch[:, 1], return_counts=True)
+        current_max = np.float32(np.max(current_max))
+        # print('currentmax:', current_max)
+        max_nb_pts_neighbors = np.where(current_max > max_nb_pts_neighbors,
+                                        current_max, max_nb_pts_neighbors,)
+
+    point_rneighbors = np.empty((np.int(batch), int(nb_points), int(max_nb_pts_neighbors)))
+    point_rneighbors[:] = np.nan
+
+    b = idx[:, 0]
+    _, mid_idx, counts = np.unique(b, return_index=True, return_counts=True)
+
+    for i in range(batch):
+        if i == 0:
+            this_batch, remain = idx[:counts[i], :], idx[counts[i]:, :]
+        else:
+            this_batch, remain = remain[:counts[i], :], remain[counts[i]:, :]
+        # print('this batch:', this_batch)
+        pts_idx,  nb_neighbor = np.unique(this_batch[:, 1],  return_counts=True)  # ? x 1
+        # print('nb_neighbor: ', nb_neighbor)
+        start = 0
+
+        for j in range(np.shape(nb_neighbor)[0]):
+            neighbor_idx = this_batch[start: (start + nb_neighbor[j]), 2]
+            start += nb_neighbor[j]
+            # print('neighbor_idx:', neighbor_idx)
+            point_rneighbors[i, pts_idx[j], :nb_neighbor[j]] = neighbor_idx
+
+    return np.int32(point_rneighbors)
+
+
+def get_pts_cov(pc, pts_r_neirhbor_idx):
+    """
+
+    :param pc:  bxnx3
+    :param pts_r_neirhbor_idx: bxmxk   m can be less than n, only compute key points cov
+    :return: b x m x 3 x 3
+    """
+    batch = pc.shape[0]
+    nb_key_pts = pts_r_neirhbor_idx.shape[1]
+
+    cov = np.empty((batch, nb_key_pts, 3, 3))
+    cov[:] = np.nan
+
+    for i in range(batch):
+        for j in range(nb_key_pts):
+            this_pt_nei_idx = pts_r_neirhbor_idx[i, j, :][pts_r_neirhbor_idx[i, j, :] >= 0]
+            neighbor_pts = pc[i, this_pt_nei_idx, :]  #
+            # print('neighbor_pts shape:', neighbor_pts.shape)
+            if neighbor_pts.size == 0:
+                cov[i, j, :, :] = np.eye(3)
+            else:
+                cov[i, j, :, :] = np.cov(neighbor_pts, rowvar=False)
+
+    return np.float32(cov)
+
+
 def train():
     with tf.Graph().as_default():
         with tf.device('/gpu:0'):
             pointclouds_pl, labels_pl = placeholder_inputs(batchsize, nb_points)  # batch, num_points
+            pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(batchsize, int(nb_points*0.1), 9))
             is_training_pl = tf.placeholder(tf.bool, shape=())
 
             # Note the global_step=batch parameter to minimize.
@@ -103,7 +267,7 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
 
             # Get model_prediction and loss here end_points stores the transformation
-            pred, end_points = get_model(pointclouds_pl, is_training_pl, bn_decay=bn_decay)
+            pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay)
 
             loss = get_loss(pred, labels_pl, end_points)
             #loss = get_transloss(pred, end_points)
@@ -156,13 +320,14 @@ def train():
         # Add summary writers
         # merged = tf.merge_all_summaries()
         merged = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(os.path.join('tmp', 'train'), sess.graph)
+        train_writer = tf.summary.FileWriter(os.path.join('log', 'train'), sess.graph)
         # test_writer = tf.summary.FileWriter(os.path.join('log', 'test'))
         # Init variables
         init = tf.global_variables_initializer()
         sess.run(init, {is_training_pl: True})
 
         ops = {'pointclouds_pl': pointclouds_pl,
+               'pt_local_eigs_pl': pt_local_eigs_pl,
                'labels_pl': labels_pl,
                'is_training_pl': is_training_pl,
                'pred': pred,   # prediction from network
@@ -200,15 +365,23 @@ def train():
                 log_string("Model saved in file: %s" % save_path)
 
 
+@timeit
 def test(model_path, show_result=False):
+    """
+    After trainning , restore the saved pre-trained model, and test for inference.
+    :param model_path:
+    :param show_result:
+    :return:
+    """
     tf.reset_default_graph()
     test_batchsize = 4
     with tf.device('/gpu:0'):
         pointclouds_pl, labels_pl = placeholder_inputs(test_batchsize, nb_points)
+        pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(test_batchsize, int(nb_points * 0.1), 9))
         is_training_pl = tf.placeholder(tf.bool, shape=())
 
         # simple model
-        pred, end_points = get_model(pointclouds_pl, is_training_pl, apply_rand=True)
+        pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, apply_rand=True)
 
         loss = get_loss(pred, labels_pl, end_points)
 
@@ -232,6 +405,7 @@ def test(model_path, show_result=False):
 
     ops = {'pointclouds_pl': pointclouds_pl,
            'labels_pl': labels_pl,
+           'pt_local_eigs_pl': pt_local_eigs_pl,
            'is_training_pl': is_training_pl,
            'pred': pred,  # prediction from network
            'loss': loss,
@@ -245,30 +419,30 @@ def test(model_path, show_result=False):
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
            }
-    rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)
+    rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
     feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],
+                 ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
                  ops['labels_pl']: pc_label[rand_idx],
                  ops['is_training_pl']: False}
-
-    a = time.time()
-
+    start = time.time()
     [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
                                                                                     ops['predict_pos'], ops['trans_dis'],
                                                                                     ops['test_layer1'], ops['test_layer2']],
-                                                                                   feed_dict=feed_dict)
-
-    b = time.time()
-    print('comsume time is :', b-a)
-    print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
-          'predicted pos:', predict_pos, 'pose distance:', trans_dis)
+                                                                                    feed_dict=feed_dict)
+    end = time.time()
+    print('inference time cost:{} s'.format(end-start))
+    # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
+    #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
     if show_result:
-        rand_trans = np.random.random([test_batchsize, 3])*300
+        rand_trans = np.random.random([test_batchsize, 3])*30000   # todo manually ajust the translation range
         rand_trans = np.expand_dims(rand_trans, axis=1)
         rand_trans = np.tile(rand_trans, [1, 1024, 1])
+
         opc += rand_trans
         rpc += rand_trans
-        show_pc.show_trans(opc, rpc)
+
+        show_pc.show_trans(opc, rpc, scale=300)
 
 
 def get_bn_decay(batch):
@@ -283,28 +457,7 @@ def get_bn_decay(batch):
     return bn_decay
 
 
-def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
-    """
-
-    :param point_cloud: Bxnx3 , output B x k  feature, k is the feature dimension
-    :return:
-    """
-    batchsize = point_cloud.get_shape()[0].value
-    nb_points = point_cloud.get_shape()[0].value
-    nb_key_pts = tf.int(nb_points*key_pts_percentage)
-    min_limit = tf.reduce_min(point_cloud, axis=1)  # Bx1x3
-    max_limit = tf.reduce_max(point_cloud, axis=1)  # Bx1x3
-    pts_range = tf.squeeze((max_limit-min_limit), axis=1) #B x3
-    pts_range = tf.sqrt(tf.reduce_sum(tf.square(pts_range), axis=1)) # Bx1
-    multi_radius = pts_range*radius_scale # Bx3
-
-    pts_r_neighbor = tf.
-
-
-    weighted_covariance_mat =
-
-
-def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
+def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_rand=True):
     """ Classification PointNet, input is BxNx3, output Bx4 """
 
     batch_size = point_cloud.get_shape()[0].value
@@ -318,7 +471,7 @@ def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
                          tf.random_uniform([batch_size, 1], minval=8, maxval=10),
                          tf.random_uniform([batch_size, 1], minval=8, maxval=10),
                          tf.random_uniform([batch_size, 1], minval=8, maxval=10),
-                         tf.random_uniform([batch_size, 3], minval=-100, maxval=100)], axis=1)  # random_ROTATION_and POSITION, batch x 7
+                         tf.random_uniform([batch_size, 3], minval=-5, maxval=5)], axis=1)  # random_ROTATION_and POSITION, batch x 7
 
     ran_pos = tf.concat([tf.divide(tf.slice(ran_pos, [0, 0], [batch_size, 4]),
                          tf.norm(tf.slice(ran_pos, [0, 0], [batch_size, 4]), axis=1, keep_dims=True)),
@@ -359,23 +512,23 @@ def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
     point_cloud_transformed = tf.matmul(point_cloud_transformed, transform3)   # applay or not apply this original input transform net
     # B x n x3 mul Bx3x3 = B x n x 3
 
-    input_image = tf.expand_dims(point_cloud_transformed, -1)  # become Bx3x3x1
+    input_image = tf.expand_dims(point_cloud_transformed, -1)  # become Bxnx3x1
 
     with tf.variable_scope('main_net') as sc:
         net = tf_util.conv2d(input_image, 64, [1, 3],
                              padding='VALID', stride=[1, 1],
                              bn=True, is_training=is_training,
-                             scope='conv1', bn_decay=bn_decay)      # Bx3x1x64
+                             scope='conv1', bn_decay=bn_decay)      # Bxnx1x64
 
         net = tf_util.conv2d(net, 128, [1, 1],
                          padding = 'VALID', stride=[1, 1],
                          bn = True, is_training=is_training,
-                         scope = 'conv2', bn_decay=bn_decay)       # Bx3x1x64  Bx1024x1x64
+                         scope = 'conv2', bn_decay=bn_decay)       # Bxnx1x64  Bx1024x1x64
 
         net = tf_util.conv2d(net, 256, [1, 1],
                          padding = 'VALID', stride=[1, 1],
                          bn = True, is_training=is_training,
-                         scope = 'conv2_copy', bn_decay=bn_decay)       # Bx3x1x64  Bx1024x1x64
+                         scope = 'conv2_copy', bn_decay=bn_decay)       # Bxnx1x64  Bx1024x1x64
 
     with tf.variable_scope('feature_transform_net') as sc:
         transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
@@ -397,11 +550,11 @@ def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
                          scope = 'conv4', bn_decay=bn_decay)      #Bx1024x1x128
-        net = tf_util.conv2d(net, 256, [1,1],
+        net = tf_util.conv2d(net, 256, [1, 1],
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
                          scope='conv4_copy', bn_decay=bn_decay)      #Bx1024x1x128
-        net = tf_util.conv2d(net, 512, [1,1],
+        net = tf_util.conv2d(net, 512, [1, 1],
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
                          scope='conv5_copy', bn_decay=bn_decay)      #Bx1024x1x128
@@ -433,6 +586,18 @@ def get_model(point_cloud, is_training, bn_decay=None, apply_rand=True):
         #                           scope='fc6', bn_decay=bn_decay)  #Bx256
         # net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
         #                   scope='dp2')
+
+        point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128, kernel_size=[1, 9])  # b x nb_key_pts x 1 x 128
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+
+        point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(nb_points * key_pts_percentage), 1),
+                                      strides=1)  # b x 1 x 1 x 256
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
+
+        net = tf.concat([net, point_cloud_local], axis=-1)   # Bx512
         prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='fc7') # B x 4
 
     return prediction, end_points #net is the final prediction of 4 classes
@@ -489,10 +654,12 @@ def train_one_epoch(sess, ops, train_writer, epoch):
     """ ops: dict mapping from string to tf ops """
     is_training = True
 
-    current_data = pc_tile  # (20000) x 1024 x 3
+    current_data = pc_tile  # (20000) x 1024 x 3 numpy array
+    current_local_eig = pc_local_eigs   # (20000) x 102 x 9 numpy array
     current_label = pc_label
 
-    current_data, current_label, _ = shuffle_data(current_data, np.squeeze(current_label))  # Shuffle train files
+    current_data, current_label, current_local, _ = \
+        shuffle_data(current_data, np.squeeze(current_label), current_local_eig)  # Shuffle train files
     current_label = np.squeeze(current_label)
 
     # here we implement asy's chunk sort method for test******
@@ -519,6 +686,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
         # jittered_data = apply_np_homo(jittered_data)  #jittered data here, random homogeneous by default
 
         feed_dict = {ops['pointclouds_pl']: jittered_data,
+                     ops['pt_local_eigs_pl']: current_local[start_idx:end_idx],
                      ops['labels_pl']: current_label[start_idx:end_idx],
                      ops['is_training_pl']: is_training, }
 
@@ -528,9 +696,10 @@ def train_one_epoch(sess, ops, train_writer, epoch):
                                                                                ops['compare'], ops['test_layer1'],
                                                                                ops['test_layer2']], feed_dict= feed_dict)
 
-        # if epoch % 10 == 0 and batch_idx == 0:  # show the first batch
-        #     # print('not show now')
-        #     show_pc.show_trans(layer1, layer2, shade1, light1, shade2, light2, shade3, light3, shade4, light4) #origin transformed original dark, transformed light
+        if epoch % 10 == 0 and batch_idx == 0:  # show the first batch
+            # print('not show now')
+            show_pc.show_trans(layer1, layer2,      # origin transformed original dark, transformed light
+                               shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
 
         train_writer.add_summary(summary, step)
         pred_val = np.argmax(pred_val, 1)  # asy anotationed
@@ -569,6 +738,7 @@ def eval_one_epoch(sess, ops):
 
         feed_dict = {ops['pointclouds_pl']: pc_tile[start_idx:end_idx, :, :],
                      ops['labels_pl']: pc_label[start_idx:end_idx],
+                     ops['pt_local_eigs_pl']: pc_local_eigs[start_idx:end_idx],
                      ops['is_training_pl']: False}
 
         #print('evel data:', current_data[start_idx:end_idx, :, :])
@@ -587,6 +757,7 @@ def eval_one_epoch(sess, ops):
         #     layer2 *= 1000
         #     layer2 += -500 + 1000 * np.random.random(size=(np.shape(layer2)[0], 1, 3))
         #     show_pc.show_trans(layer1, layer2, shade1, light1, shade2, light2, shade3, light3, shade4, light4)
+
             # fake_layer2 = layer1+10*np.random.random([1, 3])
             # # batch = np.shape(layer1)[0]
             #
@@ -781,7 +952,7 @@ def compute_pos_distance(batch_pos1, batch_pos2):
     return [mean_angle, mean_pos]
 
 
-def shuffle_data(data, labels):
+def shuffle_data(data, labels, local_eig):
     """ Shuffle data and labels.
         Input:
           data: B,N,... numpy array
@@ -791,7 +962,7 @@ def shuffle_data(data, labels):
     """
     idx = np.arange(len(labels))
     np.random.shuffle(idx)
-    return data[idx, ...], labels[idx], idx
+    return data[idx, ...], labels[idx], local_eig[idx, ...], idx
 
 
 def rotate_point_cloud(batch_data):
@@ -909,8 +1080,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train()
+    train()
 
-    # test(os.path.join('tmp', "model.ckpt"), show_result=True)
+    test(os.path.join('tmp', "model.ckpt"), show_result=True)
 
     LOG_FOUT.close()

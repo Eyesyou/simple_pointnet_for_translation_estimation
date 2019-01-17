@@ -32,20 +32,7 @@ def mycov(g, v):
         covmat += g[i, :].T @ v[i, :]
     return covmat
 
+
 if __name__ == '__main__':
-    # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/lab4/lab4_project0.txt')
-    # pc2 = od.read_point_cloud('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/lab4/final.ply')
-    # od.draw_geometries([pc2])
-    g = np.random.random((1, 3))  # 3x1
-    g = np.tile(g, (4, 1))
-    h = np.random.random((4, 3))  # 3x2
-    # print(g@(h.T))
-    print('g:', g, '\n', 'h:', h)
-    print('cov func:', np.cov(h, rowvar=False))
-    print('mycov func:', mycov(h, g))
-    a = np.random.random([1, 3])
-    b = np.random.random([4, 3])
-    # c = np.cov(a, y=b, rowvar=False)
-    # print(c)
-    print(np.asarray([1, 2])+np.asarray([3, ]))
+    print(np.random.random([4, 3]))
 

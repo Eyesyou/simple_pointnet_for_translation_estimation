@@ -1,12 +1,14 @@
 import numpy as np
 import h5py
+import time
 import tensorflow as tf
 from mayavi import mlab
 from scipy.spatial import distance
 import math
 from plyfile import PlyData, PlyElement
-
-
+from scipy import spatial
+from show_pc import PointCloud
+import matplotlib.pyplot as plt
 class OctNode:
     def __init__(self, coordinates, size, data=None):
         assert isinstance(coordinates, np.ndarray)
@@ -24,365 +26,20 @@ class OctNode:
         self.dfr = None
         self.children = [self.ubl, self.ubr, self.ufl, self.ufr, self.dbl, self.dbr, self.dfl, self.dfr]
 
-
-class PointCloud:
-    def __init__(self, one_pointcloud):
-        assert isinstance(one_pointcloud, np.ndarray)
-        one_pointcloud = np.squeeze(one_pointcloud)
-        assert one_pointcloud.shape[1] == 3
-        self.min_limit = np.amin(one_pointcloud, axis=0)  # 1x3
-        self.max_limit = np.amax(one_pointcloud, axis=0)  # 1x3
-        self.range = self.max_limit - self.min_limit
-        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
-        self.position = one_pointcloud  # nx3 numpy array
-        self.center = np.mean(self.position, axis=0)  # 1x3
-        self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position  # for projection use
-        self.plane = None
-        self.plane_origin = None
-        self.plane_project_points = None
-        self.root = None
-        self.depth = 0
-        self.point_kneighbors = None  # n x k , k is the index of the neighbor points
-        self.point_rneighbors = None  # n x (0 to nb_points), the index of the neighbor points,
-        # number may differ according to different points
-        print(self.nb_points, ' points', 'range:', self.range)
-
-    def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
-        """
-        :param plane:  the plane you want to project the point cloud into, and generate the image-like grid,
-        define the normal of the plane is to the direction of point cloud center
-        :param n:
-        :param grid_resolution:
-        :return:
-        """
-        if plane is None:
-            # generate a random plane whose distance to the center bigger than self.range
-            # d = abs(Ax+By+Cz+D)/sqrt(A**2+B**2+C**2)
-            plane_normal = -0.5 + np.random.random(size=[3, ])  # random A B C for Ax+By+Cz+D=0
-            A = plane_normal[0]
-            B = plane_normal[1]
-            C = plane_normal[2]
-            D = -(A * self.center[0] + B * self.center[1] + C * self.center[2]) + (np.random.binomial(1, 0.5) * 2 - 1) * \
-                self.range * np.sqrt(A ** 2 + B ** 2 + C ** 2)
-
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
         else:
-            A = plane[0]
-            B = plane[1]
-            C = plane[2]
-            D = plane[3]
+            print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
+        return result
+    return timed
 
-        # compute the project point of center in the grid plane:
-        t = (A * self.center[0] + B * self.center[1] + C * self.center[2] + D) / (A ** 2 + B ** 2 + C ** 2)
-        x0 = self.center[0] - A * t  # project point in the plane
-        y0 = self.center[1] - B * t
-        z0 = self.center[2] - C * t
-        self.plane_origin = [x0, y0, z0]
-        if (self.center[0] - x0) / A < 0:
-            A = -A
-            B = -B
-            C = -C
-            D = -D
-        self.plane = [A, B, C, D]
-        try:
-            assert math.isclose((self.center[0] - x0) / A, (self.center[1] - y0) / B) and \
-                   math.isclose((self.center[1] - y0) / B, (self.center[2] - z0) / C) and (self.center[0] - x0) / A > 0
-        except AssertionError:
-            print('AssertionError', (self.center[0] - x0) / A, (self.center[1] - y0) / B, (self.center[2] - z0) / C, A,
-                  B, C, D)
-        x1 = x0  # Parallelogram points of the grid,define x1,y1,z1 by plane function and
-        a = 1 + B ** 2 / C ** 2  # range distance limitation
-        b = 2 * B / C * (z0 + (D + A * x1) / C) - 2 * y0
-        c = y0 ** 2 - self.range ** 2 / 4 + (x1 - x0) ** 2 + (z0 + (D + A * x1) / C) ** 2
-        y1 = np.roots([a, b, c])  # Unary two degree equation return two root
-        if np.isreal(y1[0]):
-            y1 = y1[0]
-        else:
-            print('not real number')
-        z1 = -(D + A * x1 + B * y1) / C
-        # the y direction of the plane, this is a vector
-        y_nomal = np.cross([self.center[0] - x0, self.center[1] - y0, self.center[2] - z0], [x1 - x0, y1 - y0, z1 - z0])
 
-        # the minimal distance for every grid, the second index store the point label
-
-        min_dist = 10 * self.range * np.ones(shape=[grid_resolution[0], grid_resolution[1], 2])
-        point_label = np.zeros(shape=(self.nb_points,))
-        for i in range(self.nb_points):
-
-            t_ = (A * self.position[i, 0] + B * self.position[i, 1] + C * self.position[i, 2] + D) \
-                 / (A ** 2 + B ** 2 + C ** 2)
-            project_point = np.asarray([self.position[i, 0] - A * t_, self.position[i, 1] - B * t_,
-                                        self.position[i, 2] - C * t_])
-
-            project_y = point2line_dist(project_point, np.asarray([x0, y0, z0]),
-                                        np.asarray([x1 - x0, y1 - y0, z1 - z0]))
-            project_x = np.sqrt(np.sum(np.square(project_point - np.asarray([x0, y0, z0]))) - project_y ** 2)
-
-            # print('project x', project_x, 'project y', project_y)
-            if (project_point[0] - x0) * (x1 - x0) + (project_point[1] - y0) * (y1 - y0) + (project_point[2] - z0) * (
-                    z1 - z0) >= 0:
-                # decide if it is first or fourth quadrant
-                if np.dot(y_nomal, project_point - np.asarray([x0, y0, z0])) < 0:
-                    # fourth quadrant
-                    project_y = -project_y
-
-            else:
-                project_x = - project_x
-                if np.dot(y_nomal, project_point - np.asarray([x0, y0, z0])) < 0:
-                    # third quadrant
-                    project_y = -project_y
-
-            pixel_width = self.range * 2 / grid_resolution[0]
-            pixel_height = self.range * 2 / grid_resolution[1]
-            distance = point2plane_dist(self.position[i, :], [A, B, C, D])
-            index_x = int(grid_resolution[0] / 2 + np.floor(project_x / pixel_width))
-            index_y = int(grid_resolution[1] / 2 + np.floor(project_y / pixel_height))
-            try:
-                if distance < min_dist[index_x, index_y, 0]:
-                    min_dist[index_x, index_y, 0] = distance
-                    # if other points is already projected, set it to 0
-                    if np.equal(np.mod(min_dist[index_x, index_y, 1], 1), 0):
-                        old_point_index = min_dist[index_x, index_y, 1]
-                        old_point_index = int(old_point_index)
-                        point_label[old_point_index] = 0
-                    min_dist[index_x, index_y, 1] = i  # new point index
-                    point_label[i] = 1  # visible points
-            except AssertionError:
-                print('AssertionError:', np.floor(project_x / pixel_width), pixel_width)
-
-        if n is not None:
-            # sample the visible points to given number of points
-            medium = self.position[point_label == 1]
-            try:
-                assert medium.shape[0] >= n  # sampled points have to be bigger than n
-            except AssertionError:
-                print('sampled points number is:', medium.shape[0])
-                raise ValueError('value error')
-            np.random.shuffle(medium)  # only shuffle the first axis
-            self.visible = medium[0:n, :]
-        else:
-            self.visible = self.position[point_label == 1]
-
-        t_1 = (A * self.visible[:, 0] + B * self.visible[:, 1] + C * self.visible[:, 2] + D) \
-              / (A ** 2 + B ** 2 + C ** 2)
-        t_1 = np.expand_dims(t_1, axis=1)
-
-        self.plane_project_points = np.concatenate([np.expand_dims(self.visible[:, 0], axis=1) - A * t_1,
-                                                    np.expand_dims(self.visible[:, 1], axis=1) - B * t_1,
-                                                    np.expand_dims(self.visible[:, 2], axis=1) - C * t_1], axis=1)
-
-    def show(self, not_show=False, scale=0.005):
-        mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
-        fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                            self.position[:, 2] * 10**-9 + self.range * scale,
-                            colormap='Spectral', scale_factor=1)
-        if not not_show:
-            mlab.show()
-        else:
-            return fig
-
-    def add_noise(self, factor=1 / 100):
-        """
-        jitter noise for every points in the point cloud
-        :param factor:
-        :return:
-        """
-        noise = np.random.random([self.nb_points, 3]) * factor * self.range
-        self.position += noise
-
-    def add_outlier(self, factor=1 / 100):
-        """
-        randomly delete points and make it to be the outlier
-        :param factor:
-        :return:
-        """
-
-        inds = np.random.choice(np.arange(self.nb_points), size=int(factor * self.nb_points))
-        self.position[inds] = self.center + -self.range / 6 + self.range / 3 * np.random.random(size=(len(inds), 3))
-
-    def normalize(self):
-        self.position -= self.center
-        self.position /= self.range
-        self.center = np.mean(self.position, axis=0)
-        self.min_limit = np.amin(self.position, axis=0)
-        self.max_limit = np.amax(self.position, axis=0)
-        self.range = self.max_limit - self.min_limit
-        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)
-        print('center: ', self.center, 'range:', self.range)
-
-    def octree(self):
-        def width_first_traversal(position, size, data):
-            root = OctNode(position, size, data)
-
-            min = root.position + [-root.size / 2, -root.size / 2, -root.size / 2]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            lbd = root.data[np.all(media, axis=1), :]
-            if lbd.shape[0] > 1:
-                root.dbl = width_first_traversal(
-                    root.position + [-1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
-                    root.size * 1 / 2, data=lbd)
-
-            min = root.position + [0, -root.size / 2, -root.size / 2]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            rbd = root.data[np.all(media, axis=1), :]
-            if rbd.shape[0] > 1:
-                root.dbr = width_first_traversal(
-                    root.position + [1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
-                    root.size * 1 / 2, data=rbd)
-
-            min = root.position + [-root.size / 2, 0, -root.size / 2]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            lfd = root.data[np.all(media, axis=1), :]
-            if lfd.shape[0] > 1:
-                root.dfl = width_first_traversal(
-                    root.position + [-1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
-                    root.size * 1 / 2, data=lfd)
-
-            min = root.position + [0, 0, -root.size / 2]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            rfd = root.data[np.all(media, axis=1), :]
-            if rfd.shape[0] > 1:
-                root.dfr = width_first_traversal(
-                    root.position + [1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
-                    root.size * 1 / 2, data=rfd)
-
-            min = root.position + [-root.size / 2, -root.size / 2, 0]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            lbu = root.data[np.all(media, axis=1), :]
-            if lbu.shape[0] > 1:
-                root.ubl = width_first_traversal(
-                    root.position + [-1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
-                    root.size * 1 / 2, data=lbu)
-
-            min = root.position + [0, -root.size / 2, 0]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            rbu = root.data[np.all(media, axis=1), :]
-            if rbu.shape[0] > 1:
-                root.ubr = width_first_traversal(
-                    root.position + [1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
-                    root.size * 1 / 2, data=rbu)
-
-            min = root.position + [-root.size / 2, 0, 0]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            lfu = root.data[np.all(media, axis=1), :]
-            if lfu.shape[0] > 1:
-                root.ufl = width_first_traversal(
-                    root.position + [-1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
-                    root.size * 1 / 2, data=lfu)
-
-            min = root.position + [0, 0, 0]  # minx miny minz
-            max = min + root.size / 2  # maxx maxy maxz
-            media = np.logical_and(min < root.data, root.data < max)
-            rfu = root.data[np.all(media, axis=1), :]
-            if rfu.shape[0] > 1:
-                root.ufr = width_first_traversal(
-                    root.position + [1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
-                    root.size * 1 / 2, data=rfu)
-            root.children = [root.ubl, root.ubr, root.ufl, root.ufr, root.dbl, root.dbr, root.dfl, root.dfr]
-            return root
-
-        self.root = width_first_traversal(self.center, size=max(self.max_limit - self.min_limit), data=self.position)
-
-        def maxdepth(node):
-            if not any(node.children):
-                return 0
-            else:
-                return max([maxdepth(babe) + 1 for babe in node.children if babe is not None])
-
-        self.depth = maxdepth(self.root)
-
-    def generate_k_neighbor(self, k=10, show_result=False):
-        assert k < self.nb_points
-        self.point_kneighbors = None
-        p_distance = distance.cdist(self.position, self.position)
-        idx = np.argpartition(p_distance, (1, k + 1), axis=0)[1:k + 1]
-        self.point_kneighbors = np.transpose(idx)  # n x 3
-
-        if show_result:
-            for i in range(10):  # number of pictures you want to show
-                j = np.random.choice(self.nb_points, 1)  # point
-                mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
-
-                neighbor_idx = self.point_kneighbors[j, :]
-                neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-                # show the neighbor point cloud
-                mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
-                              self.position[neighbor_idx, 2],
-                              self.position[neighbor_idx, 2] * 10**-6 + self.range * 0.05,
-                              color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.2)  # tuple(np.random.random((3,)).tolist())
-
-                # show the whole point cloud
-                mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 10**-9 + self.range * 0.05,
-                              color=(0, 1, 0), scale_factor=0.1)
-                mlab.show()
-
-    def generate_r_neighbor(self, r=None, show_result=False):
-        if r is None:
-            r = self.range / 40
-        else:
-            assert 0 < r < self.range
-
-        p_distance = distance.cdist(self.position, self.position)
-        idx = np.where((p_distance < r) & (p_distance != 0))  # choose axis 0 or axis 1
-
-        _, uni_idx, nb_points_with_neighbors = np.unique(idx[0], return_index=True, return_counts=True)
-
-        maxnb_points_with_neighbors = np.max(nb_points_with_neighbors)
-
-        self.point_rneighbors = np.empty((self.nb_points, maxnb_points_with_neighbors))
-        self.point_rneighbors[:] = np.nan
-        k = 0
-        for i in range(len(nb_points_with_neighbors)):
-            for j in range(nb_points_with_neighbors[i]):
-                self.point_rneighbors[idx[0][uni_idx[i]], j] = idx[1][k].astype(np.int32)
-                k += 1
-
-        if show_result:
-            for i in range(5):
-                j = np.random.choice(self.nb_points, 1)  # random point index
-                fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
-
-                neighbor_idx = self.point_rneighbors[j, :]
-                neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-                # show the neighbor point cloud
-                mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
-                              self.position[neighbor_idx, 2],
-                              self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
-                              color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
-
-                # show the whole point cloud
-                mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 10**-9 + self.range * 0.005,
-                              color=(0, 1, 0), scale_factor=1)
-
-                # show the sphere on the neighbor
-                mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
-                              self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
-                              transparent=True, opacity=0.3)
-                mlab.show()
-
-    def down_sample(self, number_of_downsample=10000):
-        choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
-        self.position = self.position[choice_idx]
-
-        self.min_limit = np.amin(self.position, axis=0)  # 1x3
-        self.max_limit = np.amax(self.position, axis=0)  # 1x3
-        self.range = self.max_limit - self.min_limit
-        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
-        self.center = np.mean(self.position, axis=0)  # 1x3
-        self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position
-        print(self.nb_points, ' points', 'range:', self.range)
 
 # readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/train_set4noiseout/project_data.h5', 'r')  # file path
 
@@ -606,14 +263,178 @@ def point2line_dist(point, line_origin, line_vector):
     S = np.linalg.norm(np.cross((point-line_origin), line_vector))
     return S/np.linalg.norm(line_vector)
 
+@timeit
+def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
+    """
+
+    :param point_cloud:   Bxnx3  np array
+    :param key_pts_percentage:
+    :param radius_scale:
+    :return: B x nb_key_pts x 9 eigen_values
+    """
+    # print('inputshape:', point_cloud.get_shape()[:])
+
+    batchsize = point_cloud.shape[0]
+    nb_points = point_cloud.shape[1]
+    nb_key_pts = int(nb_points * key_pts_percentage)
+    min_limit = np.min(point_cloud, axis=1)  # Bx3
+    max_limit = np.max(point_cloud, axis=1)  # Bx3
+    pts_range = max_limit - min_limit  # Bx3
+    pts_range = np.sqrt(np.sum(np.square(pts_range), axis=1, keepdims=True))  # Bx1
+    multi_radius = pts_range * radius_scale  # Bx3
+    # print('multi_radius :', multi_radius)
+
+    max_nb_nei_pts = [0, 0, 0]
+
+    # get max length
+    for i in range(batchsize):
+        pc = np.squeeze(point_cloud[i])
+        pc = PointCloud(pc)
+        pc.generate_r_neighbor(rate=0.05)
+        idx1 = pc.point_rneighbors  # n x ?
+        pc.generate_r_neighbor(rate=0.1)
+        idx2 = pc.point_rneighbors  # n x ?
+        pc.generate_r_neighbor(rate=0.2)
+        idx3 = pc.point_rneighbors  # n x ?
+        current = (idx1.shape[1], idx2.shape[1], idx3.shape[1])
+        print('current:', current)
+        max_nb_nei_pts = np.max(np.asarray([max_nb_nei_pts, current]), axis=0)
+        print('max_nb:', max_nb_nei_pts)
+        """
+        pc = np.squeeze(point_cloud[i])
+        kdtree = spatial.KDTree(pc)
+        idx1 = kdtree.query_ball_point(pc, multi_radius[i, 0])
+        idx2 = kdtree.query_ball_point(pc, multi_radius[i, 1])
+        idx3 = kdtree.query_ball_point(pc, multi_radius[i, 2]) 
+        print('c length:', idx1.__len__())
+        length1 = len(max(idx1, key=len))
+        length2 = len(max(idx2, key=len))
+        length3 = len(max(idx3, key=len))
+        current = (length1, length2, length3)
+        max_nb_nei_pts = np.max(np.asarray([max_nb_nei_pts, current]), axis=0)
+        print('max_nb:', max_nb_nei_pts)
+    """
+    np_arr1 = np.empty((batchsize, nb_points, max_nb_nei_pts[0]))  # b x n x l1
+    np_arr2 = np.empty((batchsize, nb_points, max_nb_nei_pts[1]))  # b x n x l2
+    np_arr3 = np.empty((batchsize, nb_points, max_nb_nei_pts[2]))  # b x n x l3
+
+    np_arr1[:] = np.nan
+    np_arr2[:] = np.nan
+    np_arr3[:] = np.nan
+
+    for i in range(batchsize):
+        pc = np.squeeze(point_cloud[i])
+        pc = PointCloud(pc)
+        pc.generate_r_neighbor(rate=0.05)
+        idx1 = pc.point_rneighbors  # n x ?
+        pc.generate_r_neighbor(rate=0.1)
+        idx2 = pc.point_rneighbors  # n x ?
+        pc.generate_r_neighbor(rate=0.2)
+        idx3 = pc.point_rneighbors  # n x ?
+        """
+        kdtree = spatial.KDTree(pc)
+        idx1 = kdtree.query_ball_point(pc, multi_radius[i, 0])
+        idx2 = kdtree.query_ball_point(pc, multi_radius[i, 1])
+        idx3 = kdtree.query_ball_point(pc, multi_radius[i, 2])
+        print('c length:', idx1.__len__())
+        length1 = len(max(idx1, key=len))
+        length2 = len(max(idx2, key=len))
+        length3 = len(max(idx3, key=len))
+
+        print('length1 length2 length3:', length1, length2, length3)
+        """
+
+        for j, k in enumerate(idx1):
+            np_arr1[i][j][0:len(k)] = k
+        for j, k in enumerate(idx2):
+            np_arr2[i][j][0:len(k)] = k
+        for j, k in enumerate(idx3):
+            np_arr3[i][j][0:len(k)] = k
+
+    print('idx2: ', idx2, 'shape:', idx2.shape)
+    np_arr2.astype(int)
+    print('np_arr2: ', np_arr2, 'shape:', np_arr2.shape)
+    pts_r_cov = get_pts_cov(point_cloud, np_arr2)  # np_arr2 is b x n  b x n x 3 x 3
+
+    eigen_val, _ = np.linalg.eigh(pts_r_cov)  # b x n x 3 orderd
+
+    idx = np.argpartition(eigen_val[:, :, 0], nb_key_pts, axis=1)
+    print('idx:', idx)   # b x n
+    # print(eigen_val[idx])
+    key_idx = idx[:, 0:nb_key_pts]
+
+    print('idx:', key_idx)   # b x nb_key
+
+    # print('key points coordinates:', point_cloud[idx, :], 'shape:', point_cloud[idx, :].shape)
+
+    # b_dix = np.indices((batchsize, nb_key_pts))[1]  # b x nb_key
+    # print('b_dix: ', b_dix, 'shape:', b_dix.shape)
+    # batch_idx = np.concatenate([np.expand_dims(b_dix, axis=-1), np.expand_dims(idx, axis=-1)], axis=-1)  # b x nb_key x 2
+
+    key_eig_val = np.empty((batchsize, nb_key_pts, 3))  # b x nb_keypoints x 3
+    for i in range(batchsize):
+        key_eig_val[i, :, :] = eigen_val[i, key_idx[i, :], :]
+
+    print('key_eig_val: ', key_eig_val, 'shape:', key_eig_val.shape)
+
+    print('np_arr1: ', np_arr1, 'shape:', np_arr1.shape)
+    print('np_arr3: ', np_arr3, 'shape:', np_arr3.shape)
+    np_key_arr1 = np.empty((batchsize, nb_key_pts, np_arr1.shape[2]))                                     # np_arr1: b x n x nei1  to  b x  nb_key x  nei1
+    np_key_arr3 = np.empty((batchsize, nb_key_pts, np_arr3.shape[2]))
+    np_key_arr1[:] = np.nan
+    np_key_arr3[:] = np.nan
+    for i in range(batchsize):
+        np_key_arr1[i, :, :] = np_arr1[i, key_idx[i, :], :]
+        np_key_arr3[i, :, :] = np_arr3[i, key_idx[i, :], :]
+
+    print('np_key_arr1: ', np_key_arr1, 'shape:', np_key_arr1.shape)
+    print('np_key_arr3: ', np_key_arr3, 'shape:', np_key_arr3.shape)
+
+    key_pts_cov1 = get_pts_cov(point_cloud, np_key_arr1)  #    np_arr1: b x nb_key x nei1     b x nb_key x 3 x 3
+    key_pts_cov3 = get_pts_cov(point_cloud, np_key_arr3)  #    np_arr3: b x nb_key x nei3     b x nb_key x 3 x 3
+
+    key_eig_val2 = key_eig_val
+    key_eig_val1, _ = np.linalg.eigh(key_pts_cov1)  # b x nb_key_pts x 3 orderd
+    key_eig_val3, _ = np.linalg.eigh(key_pts_cov3)  # b x nb_key_pts x 3 orderd
+
+    concat = np.concatenate((key_eig_val1, key_eig_val2, key_eig_val3), axis=-1)  # b x nb_key_pts x 9
+
+    return concat
+
+
+def get_pts_cov(pc, pts_r_neirhbor_idx):
+    """
+
+    :param pc:  bxnx3
+    :param pts_r_neirhbor_idx: bxmxk   m can be less than n, only compute key points cov
+    :return: b x m x 3 x 3
+    """
+    batch = pc.shape[0]
+    nb_key_pts = pts_r_neirhbor_idx.shape[1]
+
+    cov = np.empty((batch, nb_key_pts, 3, 3))
+    cov[:] = np.nan
+
+    for i in range(batch):
+        for j in range(nb_key_pts):
+
+            this_pt_nei_idx = pts_r_neirhbor_idx[i, j, :][pts_r_neirhbor_idx[i, j, :] >= 0]
+            this_pt_nei_idx = this_pt_nei_idx.astype(np.int32)
+            #print('this_pt_nei_idx:', this_pt_nei_idx)
+            neighbor_pts = pc[i, this_pt_nei_idx, :]  # 1 x nb x 3
+            #print('neighbor_pts shape:', neighbor_pts.shape)
+            if neighbor_pts.size == 0:
+                cov[i, j, :, :] = np.eye(3)
+            else:
+                cov[i, j, :, :] = np.cov(neighbor_pts, rowvar=False)
+
+    return np.float32(cov)
+
+
+
 
 if __name__ == "__main__":
-    A = np.random.random([1, 4, 3])
-    B = np.random.random([1, 4, 3])  # n x (0 to nb_points), the index of the neighbor points,
-    B[0, 3, :] = np.nan
-    C = np.concatenate((A, B), axis=0)  # 2 x 4 x 3
-    print("C:\n", C)
-    print("diff neighbors compute_covariance_mat:\n", compute_covariance_mat(C))
+
     # A = PointCloud(A)
     # A.generate_k_neighbor(show_result=True)
     # plydata = PlyData.read('./pointcloud/lab work peace by reconstruction.ply')
@@ -630,6 +451,11 @@ if __name__ == "__main__":
     # with tf.Session() as sess:
     #     b = sess.run(A)
     #     print(b)
+    a = np.random.random((1, 1024, 3))
+
+    b = get_local_eig_np(a)
+
+
     pass
 
     # test_uniform_rotation()
