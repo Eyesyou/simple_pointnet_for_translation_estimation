@@ -17,6 +17,29 @@ from scipy.spatial import distance
 from plyfile import PlyData, PlyElement
 import cv2
 
+SHOW_ = """
+    plydata = PlyData.read(pc_path1)
+    vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+    vertex = vertex[:, 0:3]
+    pc = PointCloud(vertex)
+    pc.down_sample(number_of_downsample=10000)
+    pc.show()
+    """
+
+
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
+        else:
+            print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
+        return result
+    return timed
+
 
 def show_pc(point_cloud):
     x, y, z = point_cloud[0, :, 0], point_cloud[0, :, 1], point_cloud[0, :, 2]
@@ -300,20 +323,6 @@ def apply_homo_to_pc(pc_batch_input, homo):
     return batch_out
 
 
-def half_pc_by_plane(batch_pc, n = 1024):
-    """
-
-    :param batch_pc: x*3 point cloud input , only one object
-    :return: n*3 point cloud input m < n
-    """
-
-    min_limit = np.amin(batch_pc, axis=0)   # 1x3
-    max_limit = np.amax(batch_pc, axis=0)   # 1x3
-    print('min_limit', min_limit)
-    print('max_limit:', max_limit)
-    pc_out = batch_pc
-
-    return pc_out
 
 
 class OctNode:
@@ -844,7 +853,7 @@ def point2line_dist(point, line_origin, line_vector):
     return S/np.linalg.norm(line_vector)
 
 
-def show_projection(pc_path='', nb_sample=20000, show_origin=False):
+def show_projection(pc_path='', nb_sample=10000, show_origin=False):
     """
     show the vary projection result for one point cloud
     :param pc_path: ply file format, numpy array of nx3
@@ -856,121 +865,128 @@ def show_projection(pc_path='', nb_sample=20000, show_origin=False):
     plydata = PlyData.read(pc_path)
     vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
     vertex = vertex[:, 0:3]
-    np.random.shuffle(vertex)  # will only shuffle the first axis
-    pc = vertex[0:nb_sample, :]
+    for k in range(4):
+        np.random.shuffle(vertex)  # will only shuffle the first axis
+        pc = vertex[0:nb_sample, :]
 
-    pc_class = PointCloud(np.squeeze(pc))
+        pc_class = PointCloud(np.squeeze(pc))
 
-    # create a pyplot
-    fig = plt.figure(figsize=(19, 10))
-    if show_origin:
-        # the origin point cloud:
-        m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-        size = pc_class.position[:, 2]*10**-2+1
+        # create a pyplot
+        fig = plt.figure(figsize=(19, 10))
+        if show_origin:
+            # the origin point cloud:
+            m_fig = mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+            size = pc_class.position[:, 2]*10**-2+1
 
-        mlab.points3d(pc_class.position[:, 0], pc_class.position[:, 1], pc_class.position[:, 2],
-                      size, colormap='Spectral', scale_factor=2)
-        # mlab.show()
-        mlab.gcf().scene.parallel_projection = True  # parallel projection
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        img = mlab.screenshot(figure=m_fig)
-        mlab.close()
-        ax = fig.add_subplot(2, 3, 1)
-        ax.imshow(img)
-        ax.set_axis_off()
-
-        for i in range(5):
-            pc_class.half_by_plane(grid_resolution=(400, 400))
-
-            x = 30  # cone offset todo you have to manually ajust the cone origin
-            y = -30
-            z = 50
-            u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
-            v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
-            w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
-            vector = np.stack([u, v, w])
-            vector = vector / np.linalg.norm(vector) * 280
-            u = vector[0]
-            v = vector[1]
-            w = vector[2]
-
-            m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-
-            mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2],
-                          pc_class.visible[:, 2]*10**-2+1, colormap='Spectral', scale_factor=2, figure=m_fig)
-
-            mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
-                          figure=m_fig, scale_factor=0.1, line_width=2.0)    # color map can be RdYlGn, Spectral
-
+            mlab.points3d(pc_class.position[:, 0], pc_class.position[:, 1], pc_class.position[:, 2],
+                          size, colormap='Spectral', scale_factor=2)
+            # mlab.show()
             mlab.gcf().scene.parallel_projection = True  # parallel projection
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
-            # mlab.show()  # for testing
             img = mlab.screenshot(figure=m_fig)
             mlab.close()
-            ax = fig.add_subplot(2, 3, i+2)
+            ax = fig.add_subplot(2, 3, 1)
             ax.imshow(img)
             ax.set_axis_off()
 
-        # # the projected point cloud
-        # m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
-        # x = pc_class.visible[:, 0]
-        # y = pc_class.visible[:, 1]
-        # z = pc_class.visible[:, 2]
-        # u = pc_class.plane_project_points[:, 0] - pc_class.visible[:, 0]
-        # v = pc_class.plane_project_points[:, 1] - pc_class.visible[:, 1]
-        # w = pc_class.plane_project_points[:, 2] - pc_class.visible[:, 2]
-        # mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='2darrow', figure=m_fig)  # scale_factor=1
-        # mlab.gcf().scene.parallel_projection = True  # parallel projection
-        # f = mlab.gcf()  # this two line for mlab.screenshot to work
-        # f.scene._lift()
-        # img = mlab.screenshot(figure=m_fig)
-        # mlab.close()
-        # ax = fig.add_subplot(2, 2, 3)
-        # ax.imshow(img)
-        # ax.set_axis_off()
+            for i in range(5):
+                pc_class.half_by_plane(grid_resolution=(400, 400))
 
-        plt.subplots_adjust(wspace=0, hspace=0)
-        plt.show()
+                x = 30  # cone offset todo you have to manually ajust the cone origin
+                y = -30
+                z = 50
+                u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
+                v = pc_class.plane_project_points[1, 1] - pc_class.visible[1, 1]
+                w = pc_class.plane_project_points[1, 2] - pc_class.visible[1, 2]
+                vector = np.stack([u, v, w])
+                vector = vector / np.linalg.norm(vector) * 280
+                u = vector[0]
+                v = vector[1]
+                w = vector[2]
 
-    else:
-        # only shows the projection front point cloud
-        for i in range(6):
-            # add the screen capture0
+                m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
 
-            pc_class.half_by_plane(grid_resolution=(1024, 1024))
+                mlab.points3d(pc_class.visible[:, 0], pc_class.visible[:, 1], pc_class.visible[:, 2],
+                              pc_class.visible[:, 2]*10**-2+1, colormap='Spectral', scale_factor=2, figure=m_fig)
 
-            x = pc_class.visible[:, 0]
-            y = pc_class.visible[:, 1]
-            z = pc_class.visible[:, 2]
-            u = pc_class.plane_project_points[:, 0] - pc_class.visible[:, 0]
+                mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='cone',   # show the cone
+                              figure=m_fig, scale_factor=0.1, line_width=2.0)    # color map can be RdYlGn, Spectral
 
-            v = pc_class.plane_project_points[:, 1] - pc_class.visible[:, 1]
+                mlab.gcf().scene.parallel_projection = True  # parallel projection
+                f = mlab.gcf()  # this two line for mlab.screenshot to work
+                f.scene._lift()
+                # mlab.show()  # for testing
+                img = mlab.screenshot(figure=m_fig)
+                mlab.close()
+                ax = fig.add_subplot(2, 3, i+2)
+                ax.imshow(img)
+                ax.set_axis_off()
 
-            w = pc_class.plane_project_points[:, 2] - pc_class.visible[:, 2]
+            # # the projected point cloud
+            # m_fig = mlab.figure(bgcolor=(0, 0, 0), size=(1000, 1000))
+            # x = pc_class.visible[:, 0]
+            # y = pc_class.visible[:, 1]
+            # z = pc_class.visible[:, 2]
+            # u = pc_class.plane_project_points[:, 0] - pc_class.visible[:, 0]
+            # v = pc_class.plane_project_points[:, 1] - pc_class.visible[:, 1]
+            # w = pc_class.plane_project_points[:, 2] - pc_class.visible[:, 2]
+            # mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='2darrow', figure=m_fig)  # scale_factor=1
+            # mlab.gcf().scene.parallel_projection = True  # parallel projection
+            # f = mlab.gcf()  # this two line for mlab.screenshot to work
+            # f.scene._lift()
+            # img = mlab.screenshot(figure=m_fig)
+            # mlab.close()
+            # ax = fig.add_subplot(2, 2, 3)
+            # ax.imshow(img)
+            # ax.set_axis_off()
 
-            # x = pc_class.position[:, 0]
-            # y = pc_class.position[:, 1]
-            # z = pc_class.position[:, 2]
+            plt.subplots_adjust(wspace=0, hspace=0)
+            plt.show()
 
-            m_fig = mlab.figure(bgcolor=(0, 0, 0))
+        else:
 
-            mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='2darrow', figure=m_fig)   # scale_factor=0.05
-            mlab.gcf().scene.parallel_projection = True  # parallel projection
-            # mlab.show() # for testing, annotate this for automation
-            f = mlab.gcf()  # this two line for mlab.screenshot to work
-            f.scene._lift()
-            img = mlab.screenshot()
-            mlab.close()
+            # only shows the projection front point cloud
+            for i in range(2):
+                # add the screen capture0
+                pc_class.add_noise()
+                pc_class.add_outlier()
 
-            ax = fig.add_subplot(2, 3, i+1)
-            ax.imshow(img)
-            ax.set_axis_off()
+                pc_class.half_by_plane(grid_resolution=(256, 256))
 
-        plt.subplots_adjust(wspace=0, hspace=0)
-        plt.show()
+                x = pc_class.visible[:, 0]
+                y = pc_class.visible[:, 1]
+                z = pc_class.visible[:, 2]
+                u = pc_class.plane_project_points[:, 0] - pc_class.visible[:, 0]
 
+                v = pc_class.plane_project_points[:, 1] - pc_class.visible[:, 1]
+
+                w = pc_class.plane_project_points[:, 2] - pc_class.visible[:, 2]
+
+                # x = pc_class.position[:, 0]
+                # y = pc_class.position[:, 1]
+                # z = pc_class.position[:, 2]
+
+                m_fig = mlab.figure(bgcolor=(1, 1, 1), size=(960, 540))
+
+                #mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='2darrow', figure=m_fig)   # scale_factor=0.05
+
+                mlab.points3d(x, y, z, z*10**-3+1, colormap='Spectral', scale_factor=3, figure=m_fig)
+
+                mlab.gcf().scene.parallel_projection = True  # parallel projection
+                # mlab.show() # for testing, annotate this for automation
+                f = mlab.gcf()  # this two line for mlab.screenshot to work
+                f.scene._lift()
+                img = mlab.screenshot()
+                mlab.close()
+
+                ax = fig.add_subplot(1, 2, i+1)
+                ax.imshow(img)
+                ax.set_axis_off()
+
+            plt.subplots_adjust(wspace=0, hspace=0)
+            #plt.show()
+        plt.savefig('/home/sjtu/Pictures/asy/point clouds/dataset/lab1_'+str(k+1)+'.png')
 
 if __name__ == "__main__":
 
@@ -1004,19 +1020,11 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
 
-    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab4/final.ply'
-
-    plydata = PlyData.read(pc_path1)
-    vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
-    vertex = vertex[:, 0:3]
-    pc = PointCloud(vertex)
-    pc.down_sample(number_of_downsample=10000)
-    pc.show()
-
+    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
     # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
     # pc = np.loadtxt(base_path + '/lab4/lab4_project' + str(1) + '.txt')
     # pc = PointCloud(pc)
     # pc.compute_key_points(rate=0.05, show_result=True)
     # pc.generate_r_neighbor(rate=0.15, show_result=True)
 
-    # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=True)
+    show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False)

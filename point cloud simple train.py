@@ -9,6 +9,7 @@ import time
 import os
 import sys
 import tf_util
+from sklearn import preprocessing
 from show_samples import plotit
 import show_pc
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
@@ -44,6 +45,9 @@ key_pts_percentage = 0.1
 readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/project_data.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
+pc_test = pc_tile[0, :, :]
+pc_test = PointCloud(pc_test)
+
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100
 
@@ -431,6 +435,7 @@ def test(model_path, show_result=False):
                                                                                     feed_dict=feed_dict)
     end = time.time()
     print('inference time cost:{} s'.format(end-start))
+    print('trans dis is :{}'.format(trans_dis))
     # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
     #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
@@ -442,7 +447,20 @@ def test(model_path, show_result=False):
         opc += rand_trans
         rpc += rand_trans
 
-        show_pc.show_trans(opc, rpc, scale=300)
+        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
+                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
+                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
+                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
+                                  np.random.uniform(size=(test_batchsize, 3), low=-15, high=15)],
+                                 axis=1)  # random_ROTATION_and POSITION, batch x 7
+
+        ran_pos = np.concatenate([preprocessing.normalize(ran_pos[:, :4], norm='l2'), ran_pos[:, 4:7]], axis=1)
+        # normalize random pose
+        ran_pos = np_quat_pos_2_homo(ran_pos)
+        move_pc = apply_np_homo(opc, ran_pos)
+
+        show_pc.show_trans(opc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
+        show_pc.show_trans(move_pc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
 
 
 def get_bn_decay(batch):
@@ -467,15 +485,16 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
     print('generate ramdom_pose onece here:')
-    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=8, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=8, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=8, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=8, maxval=10),
-                         tf.random_uniform([batch_size, 3], minval=-5, maxval=5)], axis=1)  # random_ROTATION_and POSITION, batch x 7
+    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=7, maxval=10),
+                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
+                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
+                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
+                         tf.random_uniform([batch_size, 3], minval=-15, maxval=15)], axis=1)  # random_ROTATION_and POSITION, batch x 7
 
     ran_pos = tf.concat([tf.divide(tf.slice(ran_pos, [0, 0], [batch_size, 4]),
                          tf.norm(tf.slice(ran_pos, [0, 0], [batch_size, 4]), axis=1, keep_dims=True)),
                          tf.slice(ran_pos, [0, 4], [batch_size, 3])], axis=1)       # normalize random pose
+
     end_points['random_pos'] = ran_pos
     ran_homo = tf_quat_pos_2_homo(ran_pos)  # Bx4x4
     if apply_rand:
@@ -696,8 +715,9 @@ def train_one_epoch(sess, ops, train_writer, epoch):
                                                                                ops['compare'], ops['test_layer1'],
                                                                                ops['test_layer2']], feed_dict= feed_dict)
 
-        if epoch % 10 == 0 and batch_idx == 0:  # show the first batch
+        if epoch % 20 == 0 and batch_idx == 0:  # show the first batch
             # print('not show now')
+
             show_pc.show_trans(layer1, layer2,      # origin transformed original dark, transformed light
                                shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
 
@@ -1080,7 +1100,7 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train()
+    # train()
 
     test(os.path.join('tmp', "model.ckpt"), show_result=True)
 
