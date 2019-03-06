@@ -63,7 +63,7 @@ def tf_euler_pos_2_homo(batch_input):
     return batch_out
 
 
-def homo_transform_net(point_cloud, is_training, bn_decay=None, K=3):
+def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=True, bn_decay=None, K=3):
     """ Input (XYZ) Transform Net, input is BxNx3
         Return:
             Transformation matrix of size BX7 ,K=3 in ordinary"""
@@ -119,9 +119,27 @@ def homo_transform_net(point_cloud, is_training, bn_decay=None, K=3):
     net = tf_util.max_pool2d(net, [num_point, 1], padding='VALID', scope='hmaxpool2')  # Bx1024x1x1024
     net = tf.reshape(net, [batch_size, -1])  # B x X
     net = tf.layers.dense(net, 512)
+
+    if use_local:
+        point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1 , 9 because multi-scale
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 9, 1])
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256,
+                                             kernel_size=[1, 9])  # b x nb_key_pts x 1 x 256
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
+                                             kernel_size=[1, 1])  # b x nb_key_pts x 1 x 512
+        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
+                                             kernel_size=[1, 1])  # b x nb_key_pts x 1 x 512
+
+        point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
+                                                    pool_size=(int(1024 * 0.1), 1),
+                                                    strides=1)  # b x 1 x 1 x 512
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 512
+        net = tf.concat([net, point_cloud_local], axis=-1)  # B x 1024
+
     net = tf.layers.dense(net, 256)
+
     net = tf.layers.dense(net, 64)  # Bx64
-    net = tf.layers.dense(net, 7)   # Bx7
+
     transform_7 = tf.layers.dense(net, 7)
 
     #reshape = tf.reshape(net, (batch_size, 1024*3)) # B x (1024*3)

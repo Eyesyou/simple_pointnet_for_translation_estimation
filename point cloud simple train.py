@@ -49,7 +49,7 @@ pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
 
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
-pc_tile *= 100
+pc_tile *= 100   # for scale
 
 
 # <editor-fold desc="use this snipet to make">
@@ -257,7 +257,7 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
     return np.float32(cov)
 
 
-def train():
+def train(model_name, use_local=False):
     with tf.Graph().as_default():
         with tf.device('/gpu:0'):
             pointclouds_pl, labels_pl = placeholder_inputs(batchsize, nb_points)  # batch, num_points
@@ -271,7 +271,7 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
 
             # Get model_prediction and loss here end_points stores the transformation
-            pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay)
+            pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay, use_local=use_local)
 
             loss = get_loss(pred, labels_pl, end_points)
             #loss = get_transloss(pred, end_points)
@@ -297,8 +297,7 @@ def train():
             other_var_list = list(set(all_var_set).difference(set(homo_var_set)))
             input_fea_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='input_transform_net')
 
-            assert set(all_var_set) == set(homo_var_set) | set(
-                other_var_list)  # assure that all variables are included.
+            assert set(all_var_set) == set(homo_var_set) | set(other_var_list)  # assure that all variables are included.
 
             print('length of :other var list,homo_var_set, all_var_set', len(other_var_list), len(homo_var_set),
                   len(all_var_set))
@@ -341,8 +340,8 @@ def train():
                'step': batch,
                'trans_dis': end_points['trans_dis'],
                'compare': end_points['compare'],
-               'test_layer1': end_points['test_layer1'],
-               'test_layer2': end_points['test_layer2']
+               'original_pc': end_points['test_layer1'],
+               'recovered_pc': end_points['test_layer2']
                }
 
         # tvars = tf.all_variables()
@@ -365,12 +364,12 @@ def train():
 
             # Save the variables to disk.
             if epoch % 10 == 0:
-                save_path = saver.save(sess, os.path.join('tmp', "model.ckpt"))
+                save_path = saver.save(sess, os.path.join('tmp', model_name))
                 log_string("Model saved in file: %s" % save_path)
 
 
 @timeit
-def test(model_path, show_result=False):
+def test(model_path, show_result=False, use_local=False):
     """
     After trainning , restore the saved pre-trained model, and test for inference.
     :param model_path:
@@ -378,14 +377,14 @@ def test(model_path, show_result=False):
     :return:
     """
     tf.reset_default_graph()
-    test_batchsize = 4
+    test_batchsize = 100
     with tf.device('/gpu:0'):
         pointclouds_pl, labels_pl = placeholder_inputs(test_batchsize, nb_points)
         pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(test_batchsize, int(nb_points * 0.1), 9))
         is_training_pl = tf.placeholder(tf.bool, shape=())
 
         # simple model
-        pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, apply_rand=True)
+        pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, apply_rand=True, use_local=use_local)
 
         loss = get_loss(pred, labels_pl, end_points)
 
@@ -418,8 +417,8 @@ def test(model_path, show_result=False):
            'step': tf.Variable(initial_value=np.ones(shape=1)),   # TODO
            'trans_dis': end_points['trans_dis'],
            'compare':  end_points['compare'],
-           'test_layer1': end_points['test_layer1'],
-           'test_layer2': end_points['test_layer2'],
+           'original_pc': end_points['test_layer1'],
+           'recovered_pc': end_points['test_layer2'],
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
            }
@@ -431,7 +430,7 @@ def test(model_path, show_result=False):
     start = time.time()
     [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
                                                                                     ops['predict_pos'], ops['trans_dis'],
-                                                                                    ops['test_layer1'], ops['test_layer2']],
+                                                                                    ops['original_pc'], ops['recovered_pc']],
                                                                                     feed_dict=feed_dict)
     end = time.time()
     print('inference time cost:{} s'.format(end-start))
@@ -459,8 +458,10 @@ def test(model_path, show_result=False):
         ran_pos = np_quat_pos_2_homo(ran_pos)
         move_pc = apply_np_homo(opc, ran_pos)
 
+        show_pc.show_trans(move_pc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)  # simulate the ramdon
+
         show_pc.show_trans(opc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
-        show_pc.show_trans(move_pc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
+
 
 
 def get_bn_decay(batch):
@@ -475,7 +476,7 @@ def get_bn_decay(batch):
     return bn_decay
 
 
-def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_rand=True):
+def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_rand=True, use_local=True):
     """ Classification PointNet, input is BxNx3, output Bx4 """
 
     batch_size = point_cloud.get_shape()[0].value
@@ -484,7 +485,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
-    print('generate ramdom_pose onece here:')
+    print('generate random_pose once here:')
     ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=7, maxval=10),
                          tf.random_uniform([batch_size, 1], minval=7, maxval=10),
                          tf.random_uniform([batch_size, 1], minval=7, maxval=10),
@@ -503,7 +504,8 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         point_cloud_jitterd = point_cloud
 
     with tf.variable_scope('homo_transform_net') as sc:
-        transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, is_training, bn_decay, K=3) # B x 7 predicted transformation
+        transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
+                                                                        is_training, use_local=use_local, bn_decay=bn_decay, K=3) # B x 7 predicted transformation
 
     #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
     #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
@@ -605,19 +607,23 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         #                           scope='fc6', bn_decay=bn_decay)  #Bx256
         # net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
         #                   scope='dp2')
+        if use_local:
 
-        point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1
-        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
-        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128, kernel_size=[1, 9])  # b x nb_key_pts x 1 x 128
-        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
-        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+            point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1 , 9 because multi-scale
+            point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128, kernel_size=[1, 9])  # b x nb_key_pts x 1 x 128
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
 
-        point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(nb_points * key_pts_percentage), 1),
-                                      strides=1)  # b x 1 x 1 x 256
-        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
+            point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(nb_points * key_pts_percentage), 1),
+                                          strides=1)  # b x 1 x 1 x 256
+            point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
 
-        net = tf.concat([net, point_cloud_local], axis=-1)   # Bx512
-        prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='fc7') # B x 4
+            net = tf.concat([net, point_cloud_local], axis=-1)   # Bx512
+            prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='fc7')# B x 4
+        else:
+            prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='train_without_local')
+            # B x 4
 
     return prediction, end_points #net is the final prediction of 4 classes
 
@@ -712,14 +718,14 @@ def train_one_epoch(sess, ops, train_writer, epoch):
         summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['merged'], ops['step'],
                                                                                ops['train_op'], ops['loss'],
                                                                                ops['pred'], ops['trans_dis'],
-                                                                               ops['compare'], ops['test_layer1'],
-                                                                               ops['test_layer2']], feed_dict= feed_dict)
+                                                                               ops['compare'], ops['original_pc'],
+                                                                               ops['recovered_pc']], feed_dict= feed_dict)
 
-        if epoch % 20 == 0 and batch_idx == 0:  # show the first batch
-            # print('not show now')
-
-            show_pc.show_trans(layer1, layer2,      # origin transformed original dark, transformed light
-                               shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
+        # if epoch % 20 == 0 and batch_idx == 0:  # show the first batch
+        #     # print('not show now')
+        #
+        #     show_pc.show_trans(layer1, layer2,      # origin transformed original dark, transformed light
+        #                        shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
 
         train_writer.add_summary(summary, step)
         pred_val = np.argmax(pred_val, 1)  # asy anotationed
@@ -765,8 +771,8 @@ def eval_one_epoch(sess, ops):
 
         summary, step, loss_val, pred_val, layer1, layer2, eval_posdis = sess.run([ops['merged'], ops['step'],
                                                                                    ops['loss'], ops['pred'],
-                                                                                   ops['test_layer1'],
-                                                                                   ops['test_layer2'],
+                                                                                   ops['original_pc'],
+                                                                                   ops['recovered_pc'],
                                                                                    ops['trans_dis']],
                                                                                    feed_dict=feed_dict)
 
@@ -1100,8 +1106,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train()
+    train(model_name="with_local_model.ckpt", use_local=True)
 
-    test(os.path.join('tmp', "model.ckpt"), show_result=True)
+    #test(os.path.join('tmp', "with_local_model.ckpt"), use_local=True, show_result=False)
 
     LOG_FOUT.close()

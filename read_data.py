@@ -15,9 +15,10 @@ def save_data(save_path='', n=5000, base_path='', use_key_feature=True):
     # tf.enable_eager_execution()
     pc_tile = np.empty(shape=(4*n, 1024, 3))
     if use_key_feature:
-        pc_key_feature = np.empty(shape=(4*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1
-
+        pc_key_feature = np.empty(shape=(4*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
+        # 9 for multi-scale eigen-value
         #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
+
     for i in range(n):
 
             if i % 10 == 0:
@@ -573,14 +574,13 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     key_pts_cov1 = get_pts_cov(point_cloud, np_key_arr1)  #    np_arr1: b x nb_key x nei1     b x nb_key x 3 x 3
     key_pts_cov3 = get_pts_cov(point_cloud, np_key_arr3)  #    np_arr3: b x nb_key x nei3     b x nb_key x 3 x 3
 
-    key_eig_val2 = key_eig_val
-    key_eig_val1, _ = np.linalg.eigh(key_pts_cov1)  # b x nb_key_pts x 3 orderd
-    key_eig_val3, _ = np.linalg.eigh(key_pts_cov3)  # b x nb_key_pts x 3 orderd
+    key_eig_val2 = key_eig_val  # ordered
+    key_eig_val1, _ = np.linalg.eigh(key_pts_cov1)  # b x nb_key_pts x 3 ordered
+    key_eig_val3, _ = np.linalg.eigh(key_pts_cov3)  # b x nb_key_pts x 3 ordered
 
     concat = np.concatenate((key_eig_val1, key_eig_val2, key_eig_val3), axis=-1)  # b x nb_key_pts x 9
 
     return concat
-
 
 
 def get_pts_nei(idx, batch, nb_points):
