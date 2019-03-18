@@ -38,14 +38,14 @@ def tf_quat_pos_2_homo(batch_input):
     :param batch_input: batchx7 4 quaternion 3 position xyz
     :return: transformation: batch homogeneous matrix batch x 4 x 4
     """
-    batch = batch_input.shape[0].value  #or tensor.get_shape().as_list()
+    batch = batch_input.shape[0].value  # or tensor.get_shape().as_list()
 
-    w = tf.slice(batch_input, [0, 0], [batch, 1])       #all shape of: (batch,1)
+    w = tf.slice(batch_input, [0, 0], [batch, 1])       # all shape of: (batch,1)
     x = tf.slice(batch_input, [0, 1], [batch, 1])
     y = tf.slice(batch_input, [0, 2], [batch, 1])
     z = tf.slice(batch_input, [0, 3], [batch, 1])
 
-    pos_x = tf.expand_dims(tf.slice(batch_input, [0, 4], [batch, 1]), axis=2) #all shape of: (batch,1, 1)
+    pos_x = tf.expand_dims(tf.slice(batch_input, [0, 4], [batch, 1]), axis=2)  # all shape of: (batch,1, 1)
     pos_y = tf.expand_dims(tf.slice(batch_input, [0, 5], [batch, 1]), axis=2)
     pos_z = tf.expand_dims(tf.slice(batch_input, [0, 6], [batch, 1]), axis=2)
 
@@ -57,7 +57,7 @@ def tf_quat_pos_2_homo(batch_input):
     transition = tf.concat([pos_x, pos_y, pos_z], axis=1)  # Bx3x1
     batch_out = tf.concat([rotation, transition], axis=2)  # Bx3x4
     pad = tf.concat([tf.constant(0.0, shape=[batch, 1, 3]), tf.ones([batch, 1, 1], dtype=tf.float32)], axis=2) #Bx1x4
-    batch_out = tf.concat([batch_out, pad], axis=1)  #Bx4x4
+    batch_out = tf.concat([batch_out, pad], axis=1)  # Bx4x4
     return batch_out
 
 
@@ -85,18 +85,17 @@ def apply_homo_to_pc(pc_batch_input, homo):
     return batch_out
 
 
-
 def plot(pc_tile):
     ran_pos = tf.concat([tf.random_uniform([16*4, 4], minval=-10, maxval=10),
-                             tf.random_uniform([16*4, 3], minval=-10, maxval=10)],
-                            axis=1)  # random_ROTATION_and POSITION, batch x 7
+                        tf.random_uniform([16*4, 3], minval=-10, maxval=10)],
+                        axis=1)  # random_ROTATION_and POSITION, batch x 7
 
     ran_pos = tf.concat([tf.divide(tf.slice(ran_pos, [0, 0], [16*4, 4]),
-                             tf.norm(tf.slice(ran_pos, [0, 0], [16*4, 4]), axis=1, keep_dims=True)),
-                             tf.slice(ran_pos, [0, 4], [16*4, 3])], axis=1)  # normalize random pose
+                        tf.norm(tf.slice(ran_pos, [0, 0], [16*4, 4]), axis=1, keep_dims=True)),
+                        tf.slice(ran_pos, [0, 4], [16*4, 3])], axis=1)  # normalize random pose
 
-    pos1=[9.99997735e-01, 1.90134009e-03, 6.26082008e-04, -6.98232034e-04, 8.13794422e+00, -2.02135777e+00, -8.69961166e+00]
-    pos2=[1., 0., 0., 0., -8.1843853, 2.03576279, 8.75728226]
+    pos1 = [9.99997735e-01, 1.90134009e-03, 6.26082008e-04, -6.98232034e-04, 8.13794422e+00, -2.02135777e+00, -8.69961166e+00]
+    pos2 = [1., 0., 0., 0., -8.1843853, 2.03576279, 8.75728226]
 
     ran_homo = tf_quat_pos_2_homo(ran_pos)  # Bx4x4
 
@@ -105,7 +104,6 @@ def plot(pc_tile):
     result = sess.run(point_cloud_jitterd)  #128*4 x 1024 x 3
     result = result[0:128, :, :]
     show_pc.show_custom(result)
-
 
 
 if __name__ =="__main__":
@@ -125,4 +123,4 @@ if __name__ =="__main__":
         #plotit(pc_tile)
         pc_tile = sess.run(pc_tile)
         print(pc_tile.shape)
-        show_pc.show_all(pc_tile,color='y')
+        show_pc.show_all(pc_tile, color='y')

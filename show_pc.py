@@ -278,12 +278,12 @@ def tf_quat_pos_2_homo(batch_input):
     """
     batch = batch_input.shape[0].value  #or tensor.get_shape().as_list()
 
-    w = tf.slice(batch_input, [0, 0], [batch, 1])       #all shape of: (batch,1)
+    w = tf.slice(batch_input, [0, 0], [batch, 1])       # all shape of: (batch,1)
     x = tf.slice(batch_input, [0, 1], [batch, 1])
     y = tf.slice(batch_input, [0, 2], [batch, 1])
     z = tf.slice(batch_input, [0, 3], [batch, 1])
 
-    pos_x = tf.expand_dims(tf.slice(batch_input, [0, 4], [batch, 1]), axis=2) #all shape of: (batch,1, 1)
+    pos_x = tf.expand_dims(tf.slice(batch_input, [0, 4], [batch, 1]), axis=2)  # all shape of: (batch,1, 1)
     pos_y = tf.expand_dims(tf.slice(batch_input, [0, 5], [batch, 1]), axis=2)
     pos_z = tf.expand_dims(tf.slice(batch_input, [0, 6], [batch, 1]), axis=2)
 
@@ -295,7 +295,7 @@ def tf_quat_pos_2_homo(batch_input):
     transition = tf.concat([pos_x, pos_y, pos_z], axis=1)  # Bx3x1
     batch_out = tf.concat([rotation, transition], axis=2)  # Bx3x4
     pad = tf.concat([tf.constant(0.0, shape=[batch, 1, 3]), tf.ones([batch, 1, 1], dtype=tf.float32)], axis=2) #Bx1x4
-    batch_out = tf.concat([batch_out, pad], axis=1)  #Bx4x4
+    batch_out = tf.concat([batch_out, pad], axis=1)  # Bx4x4
     return batch_out
 
 
@@ -345,6 +345,11 @@ class OctNode:
 
 class PointCloud:
     def __init__(self, one_pointcloud):
+        if isinstance(one_pointcloud, str):  # ply file path
+            plydata = PlyData.read(one_pointcloud)
+            points = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+            one_pointcloud = points[:, 0:3]
+
         assert isinstance(one_pointcloud, np.ndarray)
         one_pointcloud = np.squeeze(one_pointcloud)
         assert one_pointcloud.shape[1] == 3
@@ -530,7 +535,7 @@ class PointCloud:
         self.max_limit = np.amax(self.position, axis=0)
         self.range = self.max_limit - self.min_limit
         self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)
-        print('center: ', self.center, 'range:', self.range)
+        print('normalized_center: ', self.center, 'normalized_range:', self.range)
 
     def octree(self):
         def width_first_traversal(position, size, data):
@@ -673,7 +678,7 @@ class PointCloud:
 
                 neighbor_idx = self.point_rneighbors[self.keypoints, :]
                 neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-                # show the neighbor point cloud
+                # show the neighbor point cloud in color
                 mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                               self.position[neighbor_idx, 2],
                               self.position[neighbor_idx, 0] * 10 ** -9 + self.range * 0.005,
@@ -685,10 +690,10 @@ class PointCloud:
                               self.position[:, 2] * 10 ** -9 + self.range * 0.005,
                               color=(0, 1, 0), scale_factor=1.5)
 
-                # show the sphere on the neighbor
+                # show the sphere on the neighbor in transparent color
                 mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1], self.position[self.keypoints, 2],
                               self.position[self.keypoints, 0] * 10 ** -9 + r * 2, color=(0, 0, 1), scale_factor=1,
-                              transparent=True, opacity=0.025)  # 0.1 for rate 0.05, 0.04 for rate 0.1, 0.025 for rate 0.15
+                              transparent=True, opacity=0.025)  # 0.1 for rate 0.05, 0.04 for rate 0.1, 0.025 for rate 0.15 in empirical
 
                 # show the key points
                 mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1],
@@ -700,7 +705,7 @@ class PointCloud:
 
             else:
                 for i in range(5):
-                    j = np.random.choice(self.nb_points, 1)  # choose one random point index
+                    j = np.random.choice(self.nb_points, 1)  # choose one random point index to plot
                     fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                     neighbor_idx = self.point_rneighbors[j, :]
@@ -1020,11 +1025,13 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
 
-    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
-    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
-    # pc = np.loadtxt(base_path + '/lab4/lab4_project' + str(1) + '.txt')
-    # pc = PointCloud(pc)
-    # pc.compute_key_points(rate=0.05, show_result=True)
-    # pc.generate_r_neighbor(rate=0.15, show_result=True)
+    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
 
-    show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False)
+    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'
+
+    pc = PointCloud(base_path + '/lab4/final.ply')
+    pc.down_sample(1024)
+    pc.compute_key_points(rate=0.1, show_result=True)
+    # c.generate_r_neighbor(rate=0.15, show_result=True)
+
+    # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False)

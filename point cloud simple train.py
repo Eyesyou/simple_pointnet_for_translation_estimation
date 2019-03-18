@@ -47,7 +47,8 @@ readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/no
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
-
+quaternion_range = [7, 10]
+translation_range = [-15, 15]
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100   # for scale
 
@@ -86,7 +87,7 @@ light4 = light[3, :].tolist()
 shade4 = shade[3, :].tolist()
 
 print('initial learning rate :', init_learning_rate, '\n', 'decay_rate is :', decay_rate, '\n',
-      'decay_step is: ', decay_step, 'max_epoch is:', max_epoch)
+      'decay_step is: ', decay_step, 'max_epoch is:', max_epoch, '\n', 'batchsize is:', batchsize)
 
 
 def log_string(out_str):
@@ -369,15 +370,19 @@ def train(model_name, use_local=False):
 
 
 @timeit
-def test(model_path, show_result=False, use_local=False):
+def test(model_path, show_result=False, use_local=False, times=1):
     """
     After trainning , restore the saved pre-trained model, and test for inference.
     :param model_path:
     :param show_result:
+    :param use_local:
+    :param times:  how many times to test
     :return:
     """
+
     tf.reset_default_graph()
     test_batchsize = 100
+    print('test_batchsize is :', test_batchsize)
     with tf.device('/gpu:0'):
         pointclouds_pl, labels_pl = placeholder_inputs(test_batchsize, nb_points)
         pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(test_batchsize, int(nb_points * 0.1), 9))
@@ -422,21 +427,26 @@ def test(model_path, show_result=False, use_local=False):
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
            }
-    rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
-    feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],
-                 ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
-                 ops['labels_pl']: pc_label[rand_idx],
-                 ops['is_training_pl']: False}
-    start = time.time()
-    [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
-                                                                                    ops['predict_pos'], ops['trans_dis'],
-                                                                                    ops['original_pc'], ops['recovered_pc']],
-                                                                                    feed_dict=feed_dict)
-    end = time.time()
-    print('inference time cost:{} s'.format(end-start))
-    print('trans dis is :{}'.format(trans_dis))
-    # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
-    #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
+    for j in range(times):  # how many times you want to test
+        rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
+        feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],
+                     ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
+                     ops['labels_pl']: pc_label[rand_idx],
+                     ops['is_training_pl']: False}
+
+        start = time.time()
+        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
+                                                                                        ops['predict_pos'], ops['trans_dis'],
+                                                                                        ops['original_pc'], ops['recovered_pc']],
+                                                                                        feed_dict=feed_dict)
+
+        end = time.time()
+        print('inference time cost:{} s'.format(end-start))
+        print('trans dis is :{}'.format(trans_dis))
+        print('total loss is:{}'.format(total_loss))
+        print('***********')
+        # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
+        #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
     if show_result:
         rand_trans = np.random.random([test_batchsize, 3])*30000   # todo manually ajust the translation range
@@ -446,12 +456,12 @@ def test(model_path, show_result=False, use_local=False):
         opc += rand_trans
         rpc += rand_trans
 
-        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
-                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
-                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
-                                  np.random.uniform(size=(test_batchsize, 1), low=7, high=10),
-                                  np.random.uniform(size=(test_batchsize, 3), low=-15, high=15)],
-                                 axis=1)  # random_ROTATION_and POSITION, batch x 7
+        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
+                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
+                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
+                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
+                                  np.random.uniform(size=(test_batchsize, 3), low=translation_range[0], high=translation_range[1])],
+                                  axis=1)  # random_ROTATION_and POSITION, batch x 7
 
         ran_pos = np.concatenate([preprocessing.normalize(ran_pos[:, :4], norm='l2'), ran_pos[:, 4:7]], axis=1)
         # normalize random pose
@@ -461,7 +471,6 @@ def test(model_path, show_result=False, use_local=False):
         show_pc.show_trans(move_pc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)  # simulate the ramdon
 
         show_pc.show_trans(opc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
-
 
 
 def get_bn_decay(batch):
@@ -477,7 +486,16 @@ def get_bn_decay(batch):
 
 
 def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_rand=True, use_local=True):
-    """ Classification PointNet, input is BxNx3, output Bx4 """
+    """
+    Classification PointNet, input is BxNx3, output Bx4
+    :param point_cloud:
+    :param point_cloud_local:
+    :param is_training:
+    :param bn_decay:
+    :param apply_rand: whether to apply random transformation for data augmentation
+    :param use_local:
+    :return:
+    """
 
     batch_size = point_cloud.get_shape()[0].value
     num_point = point_cloud.get_shape()[1].value
@@ -486,11 +504,11 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
     print('generate random_pose once here:')
-    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=7, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
-                         tf.random_uniform([batch_size, 1], minval=7, maxval=10),
-                         tf.random_uniform([batch_size, 3], minval=-15, maxval=15)], axis=1)  # random_ROTATION_and POSITION, batch x 7
+    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
+                         tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
+                         tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
+                         tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
+                         tf.random_uniform([batch_size, 3], minval=translation_range[0], maxval=translation_range[1])], axis=1)  # random_ROTATION_and POSITION, batch x 7
 
     ran_pos = tf.concat([tf.divide(tf.slice(ran_pos, [0, 0], [batch_size, 4]),
                          tf.norm(tf.slice(ran_pos, [0, 0], [batch_size, 4]), axis=1, keep_dims=True)),
@@ -505,7 +523,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     with tf.variable_scope('homo_transform_net') as sc:
         transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
-                                                                        is_training, use_local=use_local, bn_decay=bn_decay, K=3) # B x 7 predicted transformation
+                                                                        is_training, use_local=use_local) # B x 7 predicted transformation
 
     #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
     #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
@@ -608,18 +626,21 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         # net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
         #                   scope='dp2')
         if use_local:
-
-            point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1 , 9 because multi-scale
+            # b x nb_key_pts x 9 x 1 , 9 because multi-scale
+            point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)
             point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128, kernel_size=[1, 9])  # b x nb_key_pts x 1 x 128
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256, kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
-
-            point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(nb_points * key_pts_percentage), 1),
-                                          strides=1)  # b x 1 x 1 x 256
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=64,
+                                                 kernel_size=[1, 9])  # b x nb_key_pts x 1 x 64
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128,
+                                                 kernel_size=[1, 1])  # b x nb_key_pts x 1 x 128
+            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256,
+                                                 kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+            point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
+                                                        pool_size=(int(nb_points * key_pts_percentage), 1),
+                                                        strides=1)  # b x 1 x 1 x 256
             point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
 
-            net = tf.concat([net, point_cloud_local], axis=-1)   # Bx512
+            net = tf.concat([net, point_cloud_local], axis=-1)   # Bx256
             prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='fc7')# B x 4
         else:
             prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='train_without_local')
@@ -631,13 +652,13 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=10, pose_weight=10):
     """ pred: B*NUM_CLASSES,
         label: B, """
-    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=label)  #pred:(Bx4) label:(B,),loss:(B,),originally logits = label, label=pred
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=label)   # pred:(Bx4) label:(B,),loss:(B,),originally logits = label, label=pred
     classify_loss = tf.reduce_mean(loss)   # you need mean
     tf.summary.scalar('classify loss', classify_loss)
 
     # Enforce the transformation as orthogonal matrix
-    transform = end_points['transform'] # BxKxK the feature transformation
-    K = transform.get_shape()[1].value #K=64
+    transform = end_points['transform']  # BxKxK the feature transformation
+    K = transform.get_shape()[1].value  # K=64
 
     mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1])) # BxKxK
     mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
@@ -647,7 +668,7 @@ def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=10, pose
 
     tf.summary.scalar('mat loss', mat_diff_loss)
     final_loss = tf.add(classify_loss, mat_diff_loss * reg_weight)
-    final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")  # if trans_diff * 0.0 means end-to-end trainning
+    final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")   # if trans_diff * 0.0 means end-to-end trainning
 
     return final_loss
 
@@ -839,7 +860,7 @@ def tf_euler_pos_2_homo(batch_input):
     rotation_x = tf.reshape(tf.concat([tf.constant(1.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
                             tf.constant(0.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
                             tf.cos(psi), -tf.sin(psi), tf.constant(0.0, shape=[batch, 1]), tf.sin(psi), tf.cos(psi)],
-                            axis=1), shape=[batch, 3, 3]) #Bx3x3
+                            axis=1), shape=[batch, 3, 3])  # Bx3x3
 
     rotation_y = tf.reshape(tf.concat([tf.cos(theta), tf.constant(0.0, shape=[batch, 1]), tf.sin(theta),
                             tf.constant(0.0, shape=[batch, 1]), tf.constant(1.0, shape=[batch, 1]),
@@ -851,7 +872,7 @@ def tf_euler_pos_2_homo(batch_input):
                             tf.constant(0.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
                             tf.constant(1.0, shape=[batch, 1])], axis=1), shape=[batch, 3, 3])
 
-    rotation = tf.matmul(tf.matmul(rotation_x, rotation_y), rotation_z) # Bx3x3
+    rotation = tf.matmul(tf.matmul(rotation_x, rotation_y), rotation_z)  # Bx3x3
     transition = tf.concat([pos_x, pos_y,pos_z], axis=1)    # Bx3x1
     batch_out = tf.concat([rotation, transition], axis=2)  # Bx3x4
     pad = tf.concat([tf.constant(0.0, shape=[batch, 1, 3]), tf.ones([batch, 1, 1], dtype=tf.float32)], axis=2)  # Bx1x4
@@ -1056,7 +1077,7 @@ def apply_np_homo(batch_point_cloud, homo='random'):
 
     if homo =='random':
         quat = 20 * np.random.random((batch, 4)) - 10
-        quat_pos = np.concatenate([nor4vec(quat), 20 * np.random.random((batch, 4)) - 10], axis=1 )     #B x 7
+        quat_pos = np.concatenate([nor4vec(quat), 20 * np.random.random((batch, 4)) - 10], axis=1)     #B x 7
         homo = np_quat_pos_2_homo(quat_pos)
 
     batchout = np.matmul(homo, batchout) #Bx4x4 * B x 4 x n
@@ -1072,7 +1093,7 @@ def nor4vec(vector):
     :param vector: B x 4
     :return: B x 4
     """
-    return vector/np.linalg.norm(vector, axis=1)[:,np.newaxis]
+    return vector/np.linalg.norm(vector, axis=1)[:, np.newaxis]
 
 
 def np_quat_pos_2_homo(batch_input):
@@ -1106,8 +1127,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="with_local_model.ckpt", use_local=True)
+    # train(model_name="without_local_model11.ckpt", use_local=False)
 
-    #test(os.path.join('tmp', "with_local_model.ckpt"), use_local=True, show_result=False)
+    test(os.path.join('tmp', "without_local_model11.ckpt"), use_local=False, show_result=False, times=5)  # test times
 
     LOG_FOUT.close()

@@ -10,7 +10,15 @@ from scipy import spatial
 import tensorflow as tf
 
 
-def save_data(save_path='', n=5000, base_path='', use_key_feature=True):
+def save_data(save_path='', base_path='', n=5000, use_key_feature=True):
+    """
+    transform the txt point clouds into h5py dataset for simplicity.
+    :param save_path:
+    :param n:
+    :param base_path:
+    :param use_key_feature:
+    :return:
+    """
 
     # tf.enable_eager_execution()
     pc_tile = np.empty(shape=(4*n, 1024, 3))
@@ -18,80 +26,35 @@ def save_data(save_path='', n=5000, base_path='', use_key_feature=True):
         pc_key_feature = np.empty(shape=(4*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
         # 9 for multi-scale eigen-value
         #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
+    for k in range(4):  # four objects model
+        for i, j in enumerate(range(k*n, (k+1)*n)):
 
-    for i in range(n):
+                if i % 10 == 0:
+                    print('reading number', i + 1, 'th lab'+str(k+1)+' point clouds')
 
-            if i % 10 == 0:
-                print('reading number', i + 1, 'th lab1 point clouds')
+                if use_key_feature:
+                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
+                    pc = PointCloud(pc)
+                    pc.normalize()
 
-            if use_key_feature:
+                    expand = np.expand_dims(pc.position, axis=0)
+                    pc_tile[j, :, :] = expand
+                    # print('*****************************************')
+                    # print('reading point cloud cost time:{}'.format(t1 - t0))
+                    pc_key_eig = get_local_eig_np(expand)   # 1 x nb_keypoints x 9
 
-                pc_tile[i, :, :] = np.expand_dims(
-                    np.loadtxt(base_path+'/lab1/lab1_project'+str(i)+'.txt'), axis=0)
-                pc = np.expand_dims(pc_tile[i, :, :], axis=0);  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
+                    # print('*****************************************')
+                    # print('get local cost time:{}'.format(t2 - t1))
+                    #pc_key_feature[i, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
+                    pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
+                else:
+                    pc_tile[j, :, :] = np.expand_dims(
+                        np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt'), axis=0)
 
-                # print('*****************************************')
-                # print('reading point cloud cost time:{}'.format(t1 - t0))
-                pc_key_eig = get_local_eig_np(pc)   # 1 x nb_keypoints x 9
+                # print('-----------------------------------------')
+                # print('one pc cost total:{}second'.format(te-ts))
+                # print('----------------------------------------')
 
-                # print('*****************************************')
-                # print('get local cost time:{}'.format(t2 - t1))
-                #pc_key_feature[i, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
-                pc_key_feature[i, :, :] = np.squeeze(pc_key_eig)
-            else:
-                pc_tile[i, :, :] = np.expand_dims(
-                    np.loadtxt(base_path+'/lab1/lab1_project'+str(i)+'.txt'), axis=0)
-
-            # print('-----------------------------------------')
-            # print('one pc cost total:{}second'.format(te-ts))
-            # print('----------------------------------------')
-
-    for i, j in enumerate(range(n, 2*n)):
-        if i % 10 == 0:
-            print('reading number', i + 1, 'th lab2 point clouds')
-
-        if use_key_feature:
-            pc_tile[j, :, :] = np.expand_dims(np.loadtxt(base_path + '/lab2/lab_project' + str(i) + '.txt'),
-                                              axis=0)
-            pc = np.expand_dims(pc_tile[j, :, :], axis=0)
-
-            pc_key_eig = get_local_eig_np(pc)  # 1 x nb_keypoints x 9
-            #pc_key_feature[j, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
-            pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
-        else:
-            pc_tile[j, :, :] = np.expand_dims(np.loadtxt(base_path+'/lab2/lab_project'+str(i)+'.txt'),
-                                              axis=0)
-
-    for i, j in enumerate(range(2*n, 3*n)):
-        if i % 10 == 0:
-            print('reading number', i + 1, 'th lab3 point clouds')
-
-        if use_key_feature:
-            pc_tile[j, :, :] = np.expand_dims(
-                np.loadtxt(base_path+'/lab3/lab_project'+str(i)+'.txt'), axis=0)
-            pc = np.expand_dims(pc_tile[j, :, :], axis=0)
-
-            pc_key_eig = get_local_eig_np(pc)  # 1 x nb_keypoints x 9
-            #pc_key_feature[j, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
-            pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
-        else:
-            pc_tile[j, :, :] = np.expand_dims(
-                np.loadtxt(base_path+'/lab3/lab_project'+str(i)+'.txt'), axis=0)
-
-    for i, j in enumerate(range(3*n, 4*n)):
-        if i % 10 == 0:
-            print('reading number', i + 1, 'th lab4 point clouds')
-
-        if use_key_feature:
-            pc_tile[j, :, :] = np.expand_dims(np.loadtxt(
-                base_path+'/lab4/lab4_project'+str(i)+'.txt'), axis=0)
-            pc = np.expand_dims(pc_tile[j, :, :], axis=0)
-            pc_key_eig = get_local_eig_np(pc)  # 1 x nb_keypoints x 9
-            #pc_key_feature[j, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
-            pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
-        else:
-            pc_tile[j, :, :] = np.expand_dims(np.loadtxt(
-                base_path+'/lab4/lab4_project'+str(i)+'.txt'), axis=0)
 
     pc_label = np.concatenate(
         [np.zeros(shape=(n,)), np.ones(shape=(n,)), 2 * np.ones(shape=(n,)), 3 * np.ones(shape=(n,))], axis=0)
@@ -236,7 +199,7 @@ def test_data(h5_path='', rand_trans=False, showinone=False):
         plt.show()
 
 
-def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05):
+def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000):
     #
     # pc = np.loadtxt('carburator.txt')   # n x 3
     # np.random.shuffle(pc)  # only shuffle the first axis
@@ -278,9 +241,9 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05):
     if add_outlier is not None:
         pc.add_outlier(factor=add_outlier)
 
-    for i in range(0, 500):
+    for i in range(n):
         if i % 10 == 0:
-            print('saving number', i+1, 'th lab4_project point clouds')
+            print('saving number', i+1, 'th lab_project point clouds')
         try:
             pc.half_by_plane(grid_resolution=(300, 300))
             np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
@@ -554,7 +517,6 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     key_idx = idx[:, 0:nb_key_pts]
 
     # print('key points coordinates:', point_cloud[idx, :], 'shape:', point_cloud[idx, :].shape)
-
     # b_dix = np.indices((batchsize, nb_key_pts))[1]  # b x nb_key
     # print('b_dix: ', b_dix, 'shape:', b_dix.shape)
     # batch_idx = np.concatenate([np.expand_dims(b_dix, axis=-1), np.expand_dims(idx, axis=-1)], axis=-1)  # b x nb_key x 2
@@ -667,8 +629,8 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
 
 
 if __name__ == "__main__":
-    # save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5',
-    #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece')
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier', n=5000)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -687,10 +649,11 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[1024:2048, :])
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
+    # for i in range(1, 5):
+    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab'+str(i),
+    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab'+str(i)+'/final.ply',
+    #                  add_noise=None, add_outlier=None, n=5000)
 
-    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab4',
-                 pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab4/final.ply',
-                 add_noise=None, add_outlier=None)
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
     # pc = PointCloud(pc)

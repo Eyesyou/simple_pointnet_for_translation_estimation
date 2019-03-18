@@ -15,8 +15,8 @@ def compute_pos_distance(batch_pos1,batch_pos2):
     assert batch_pos1.get_shape().as_list()==batch_pos2.get_shape().as_list()
     assert batch_pos1.get_shape().as_list()[1]==6
 
-    angle_dis = tf.sqrt(tf.reduce_sum(tf.square(batch_pos1[:,0:3]-batch_pos2[:,0:3]),axis=1))
-    pos_dis = tf.sqrt(tf.reduce_sum(tf.square(batch_pos1[:,3:6]-batch_pos2[:,3:6]),axis=1))
+    angle_dis = tf.sqrt(tf.reduce_sum(tf.square(batch_pos1[:,0:3]-batch_pos2[:, 0:3]), axis=1))
+    pos_dis = tf.sqrt(tf.reduce_sum(tf.square(batch_pos1[:,3:6]-batch_pos2[:, 3:6]), axis=1))
     mean_angle = tf.reduce_min(angle_dis, axis=0)
     mean_pos = tf.reduce_min(pos_dis, axis=0)
 
@@ -42,7 +42,7 @@ def tf_euler_pos_2_homo(batch_input):
     #        exec(t)
     #T_44 = tf.Variable(tf.zeros([batch,4,4]))
 
-    rotation_x = tf.Variable(initial_value=tf.reshape(tf.concat([tf.constant(1.0, shape=[batch,1]), tf.constant(0.0, shape=[batch, 1]),
+    rotation_x = tf.Variable(initial_value=tf.reshape(tf.concat([tf.constant(1.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
                              tf.constant(0.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]), tf.cos(psi), -tf.sin(psi),
                              tf.constant(0.0, shape=[batch, 1]), tf.sin(psi), tf.cos(psi)], axis=1), shape=[batch, 3, 3]), trainable=False) #Bx3x3
 
@@ -63,7 +63,7 @@ def tf_euler_pos_2_homo(batch_input):
     return batch_out
 
 
-def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=True, bn_decay=None, K=3):
+def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=True):
     """ Input (XYZ) Transform Net, input is BxNx3
         Return:
             Transformation matrix of size BX7 ,K=3 in ordinary"""
@@ -73,7 +73,7 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     input_image = tf.expand_dims(point_cloud, -1)    # BxNx3x1
     net = input_image * 1   # shrink it only if you want to minimize the input
 
-    test_layer_output1 = net # BX1024X3x1
+    test_layer_output1 = net  # BX1024X3x1
 
     #net = tf_util.conv2d(net, 32, [1, 3],
     #                     padding='SAME', stride=[1, 1],
@@ -90,14 +90,11 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
 
     #net = tf_util.conv2d(net, 1024, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv13', bn_decay=bn_decay, weight_decay=0.0)
-    # net = tf.layers.conv2d(inputs=net, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)
-    # net = tf.layers.conv2d(inputs=net, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)
-    # net = tf.layers.conv2d(inputs=net, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)
     # net = tf.layers.conv2d(inputs=net, filters=1024, kernel_size=[1, 1], activation=tf.nn.relu)
-    point_wise = tf.layers.conv2d(inputs=net, filters=1024, kernel_size=[1, 1], activation=tf.nn.relu)   # Bx1024x1x1024
-    net = tf_util.max_pool2d(point_wise, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1024x1x1024
-    
-    net = tf.reshape(net, [batch_size, -1])  # B x X
+    point_wise = tf.layers.conv2d(inputs=net, filters=1024, kernel_size=[1, 1], activation=tf.nn.relu)   # BxNx1x1024
+    integrated = tf_util.max_pool2d(point_wise, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1x1x1024
+
+    integrated = tf.reshape(integrated, [batch_size, -1])  # B x 1024
 
     #net = tf_util.fully_connected(net, 128, bn=True, is_training=is_training, scope='tfc20',
     #                              bn_decay=bn_decay, weight_decay=0.0)
@@ -109,14 +106,14 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     #transform_7 = tf_util.fully_connected(net, 7, bn=True, is_training=is_training, scope='tfc22',
     #                                      bn_decay=bn_decay, weight_decay = 0.0)
 
-    net = tf.layers.dense(net, 512)
-    net = tf.layers.dense(net, 256)
-    net = tf.layers.dense(net, 64)  # Bx64
-    net = tf.expand_dims(net, axis=1)
-    net = tf.expand_dims(net, axis=1) # Bx1x1x64
-    net = tf.tile(net, [1, 1024, 1, 1])  # BX1024X1X64
-    net = tf.concat([net, point_wise], axis=-1)  #BX1024X1X1088
-    net = tf_util.max_pool2d(net, [num_point, 1], padding='VALID', scope='hmaxpool2')  # Bx1024x1x1024
+    integrated = tf.layers.dense(integrated, 512)
+    integrated = tf.layers.dense(integrated, 256)
+    integrated = tf.layers.dense(integrated, 128)  # Bx128
+    integrated = tf.expand_dims(integrated, axis=1)
+    integrated = tf.expand_dims(integrated, axis=1)  # Bx1x1x128
+    integrated = tf.tile(integrated, [1, 1024, 1, 1])  # BxNx1x128
+    net = tf.concat([integrated, point_wise], axis=-1)   # BxNx1x(1024+128)
+    net = tf_util.max_pool2d(net, [num_point, 1], padding='VALID', scope='hmaxpool2')  # BxNx1x1024
     net = tf.reshape(net, [batch_size, -1])  # B x X
     net = tf.layers.dense(net, 512)
 
@@ -125,20 +122,43 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 9, 1])
         point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256,
                                              kernel_size=[1, 9])  # b x nb_key_pts x 1 x 256
-        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
-                                             kernel_size=[1, 1])  # b x nb_key_pts x 1 x 512
-        point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
-                                             kernel_size=[1, 1])  # b x nb_key_pts x 1 x 512
+
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size * int(1024 * 0.1), -1])  # b*nb_key_pts  x 256
+        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 1, -1])  # b x nb_key_pts x 1 x 1024
+
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
+        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
+        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
 
         point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
                                                     pool_size=(int(1024 * 0.1), 1),
-                                                    strides=1)  # b x 1 x 1 x 512
-        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 512
-        net = tf.concat([net, point_cloud_local], axis=-1)  # B x 1024
+                                                    strides=1)  # b x 1 x 1 x 1024
 
-    net = tf.layers.dense(net, 256)
+        point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 1024
+        net = tf.concat([net, point_cloud_local], axis=-1)  # b x 1024
 
-    net = tf.layers.dense(net, 64)  # Bx64
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 256, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 128, activation=tf.nn.relu)  # BX128
 
     transform_7 = tf.layers.dense(net, 7)
 
@@ -231,7 +251,7 @@ def feature_transform_net(inputs, is_training, bn_decay=None, K=64):
 
     with tf.variable_scope('transform_feat') as sc:
         weights = tf.get_variable('weights', [256, K*K],
-                                  initializer=tf.truncated_normal_initializer(0.0,0.01),
+                                  initializer=tf.truncated_normal_initializer(0.0, 0.01),
                                   dtype=tf.float32)
         biases = tf.get_variable('biases', [K*K],
                                  initializer=tf.constant_initializer(0.0),
