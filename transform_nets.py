@@ -124,14 +124,19 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
                                              kernel_size=[1, 9])  # b x nb_key_pts x 1 x 256
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size * int(1024 * 0.1), -1])  # b*nb_key_pts  x 256
-        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 512, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
+        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
+
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 1, -1])  # b x nb_key_pts x 1 x 1024
 
         # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
@@ -149,16 +154,21 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
         # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
         #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
 
-        point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
-                                                    pool_size=(int(1024 * 0.1), 1),
+        point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(1024 * 0.1), 1),
                                                     strides=1)  # b x 1 x 1 x 1024
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 1024
         net = tf.concat([net, point_cloud_local], axis=-1)  # b x 1024
 
     net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 256, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 128, activation=tf.nn.relu)  # BX128
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net = tf.layers.dense(net, 512, activation=tf.nn.relu)  # BX128
 
     transform_7 = tf.layers.dense(net, 7)
 

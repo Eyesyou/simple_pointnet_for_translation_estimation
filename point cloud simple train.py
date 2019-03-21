@@ -42,13 +42,13 @@ key_pts_percentage = 0.1
 # pc_tile = np.tile(pc, (tile_size, 1, 1))   # tile_size*4 x 1024 x 3
 # pc_label = np.tile(np.array([0, 1, 2, 3]), tile_size)
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/project_data.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
 quaternion_range = [7, 10]
-translation_range = [-15, 15]
+translation_range = [-5, 5]
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100   # for scale
 
@@ -562,12 +562,12 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         net = tf_util.conv2d(net, 128, [1, 1],
                          padding = 'VALID', stride=[1, 1],
                          bn = True, is_training=is_training,
-                         scope = 'conv2', bn_decay=bn_decay)       # Bxnx1x64  Bx1024x1x64
+                         scope = 'conv2', bn_decay=bn_decay)       # Bx1024x1x128
 
         net = tf_util.conv2d(net, 256, [1, 1],
                          padding = 'VALID', stride=[1, 1],
                          bn = True, is_training=is_training,
-                         scope = 'conv2_copy', bn_decay=bn_decay)       # Bxnx1x64  Bx1024x1x64
+                         scope = 'conv2_copy', bn_decay=bn_decay)       #   Bx1024x1x256
 
     with tf.variable_scope('feature_transform_net') as sc:
         transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
@@ -597,7 +597,6 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
                          scope='conv5_copy', bn_decay=bn_decay)      #Bx1024x1x128
-
         net = tf_util.conv2d(net, 1024, [1, 1],
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
@@ -631,8 +630,6 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
             point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
             point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=64,
                                                  kernel_size=[1, 9])  # b x nb_key_pts x 1 x 64
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=128,
-                                                 kernel_size=[1, 1])  # b x nb_key_pts x 1 x 128
             point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256,
                                                  kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
             point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
@@ -1127,8 +1124,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="without_local_model11.ckpt", use_local=False)
+    train(model_name="with_local_model16.ckpt", use_local=True)
 
-    test(os.path.join('tmp', "without_local_model11.ckpt"), use_local=False, show_result=False, times=5)  # test times
-
-    LOG_FOUT.close()
+    test(os.path.join('tmp', "with_local_model16.ckpt"), use_local=True, show_result=False, times=5)  # test times
+    #
+    # LOG_FOUT.close()

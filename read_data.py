@@ -2,15 +2,17 @@ import numpy as np
 import h5py
 from show_pc import *
 import random
+import threading
 from mayavi import mlab
 from matplotlib import pyplot as plt
 from show_pc import PointCloud
 from plyfile import PlyData, PlyElement
 from scipy import spatial
+from pointcloud_sample import resolution_kpts
 import tensorflow as tf
 
 
-def save_data(save_path='', base_path='', n=5000, use_key_feature=True):
+def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types=4):
     """
     transform the txt point clouds into h5py dataset for simplicity.
     :param save_path:
@@ -26,7 +28,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True):
         pc_key_feature = np.empty(shape=(4*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
         # 9 for multi-scale eigen-value
         #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
-    for k in range(4):  # four objects model
+    for k in range(nb_types):  # four objects model
         for i, j in enumerate(range(k*n, (k+1)*n)):
 
                 if i % 10 == 0:
@@ -420,7 +422,7 @@ def get_local_eig(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0
 
 def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
     """
-
+    three scale of neighbor by default is choose.
     :param point_cloud:   Bxnx3  np array
     :param key_pts_percentage:
     :param radius_scale:
@@ -440,7 +442,7 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
 
     max_nb_nei_pts = [0, 0, 0]
 
-    # get max length
+    # get max number of neighbor points.
     for i in range(batchsize):
         pc = np.squeeze(point_cloud[i])
         pc = PointCloud(pc)
@@ -468,7 +470,7 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
         max_nb_nei_pts = np.max(np.asarray([max_nb_nei_pts, current]), axis=0)
         print('max_nb:', max_nb_nei_pts)
     """
-    np_arr1 = np.empty((batchsize, nb_points, max_nb_nei_pts[0]))  # b x n x l1
+    np_arr1 = np.empty((batchsize, nb_points, max_nb_nei_pts[0]))  # b x n x l1 store the index of neighbor points.
     np_arr2 = np.empty((batchsize, nb_points, max_nb_nei_pts[1]))  # b x n x l2
     np_arr3 = np.empty((batchsize, nb_points, max_nb_nei_pts[2]))  # b x n x l3
 
@@ -484,19 +486,6 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
         pc.generate_r_neighbor(rate=0.1)
         idx2 = pc.point_rneighbors  # n x ?
         pc.generate_r_neighbor(rate=0.2)
-        idx3 = pc.point_rneighbors  # n x ?
-        """
-        kdtree = spatial.KDTree(pc)
-        idx1 = kdtree.query_ball_point(pc, multi_radius[i, 0])
-        idx2 = kdtree.query_ball_point(pc, multi_radius[i, 1])
-        idx3 = kdtree.query_ball_point(pc, multi_radius[i, 2])
-        print('c length:', idx1.__len__())
-        length1 = len(max(idx1, key=len))
-        length2 = len(max(idx2, key=len))
-        length3 = len(max(idx3, key=len))
-
-        print('length1 length2 length3:', length1, length2, length3)
-        """
 
         for j, k in enumerate(idx1):
             np_arr1[i][j][0:len(k)] = k
@@ -509,12 +498,19 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
 
     pts_r_cov = get_pts_cov(point_cloud, np_arr2)  # np_arr2 is b x n  b x n x 3 x 3
 
-    eigen_val, _ = np.linalg.eigh(pts_r_cov)  # b x n x 3 orderd
+    eigen_val, _ = np.linalg.eigh(pts_r_cov)  # b x n x 3 orderd, to choose interested points.
+
 
     idx = np.argpartition(eigen_val[:, :, 0], nb_key_pts, axis=1)
 
+    # resolution control： every pixel could only contains one key point
+    idx = np.empty((batchsize, nb_key_pts))
+    for i in range(batchsize):
+        pc = PointCloud(point_cloud[i, :])
+        _, idx[i, :] = resolution_kpts(pc.position, eigen_val[i, :, 0], pc.range/200, nb_key_pts)
+
     # print(eigen_val[idx])
-    key_idx = idx[:, 0:nb_key_pts]
+    key_idx = idx[:, 0:nb_key_pts].astype(int)
 
     # print('key points coordinates:', point_cloud[idx, :], 'shape:', point_cloud[idx, :].shape)
     # b_dix = np.indices((batchsize, nb_key_pts))[1]  # b x nb_key
@@ -629,8 +625,8 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data.h5',
-              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier', n=5000)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/testnormallized_project_data.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier', n=50)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
