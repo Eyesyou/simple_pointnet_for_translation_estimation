@@ -503,11 +503,12 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
 
     idx = np.argpartition(eigen_val[:, :, 0], nb_key_pts, axis=1)
 
-    # resolution control： every pixel could only contains one key point
+    # using resolution control: every pixel could only contains one key point
     idx = np.empty((batchsize, nb_key_pts))
     for i in range(batchsize):
         pc = PointCloud(point_cloud[i, :])
-        _, idx[i, :] = resolution_kpts(pc.position, eigen_val[i, :, 0], pc.range/200, nb_key_pts)
+        # specify the voxel size of resolution control
+        _, idx[i, :] = resolution_kpts(pc.position, eigen_val[i, :, 0], pc.range/40, nb_key_pts)
 
     # print(eigen_val[idx])
     key_idx = idx[:, 0:nb_key_pts].astype(int)

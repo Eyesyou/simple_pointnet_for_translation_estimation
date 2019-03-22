@@ -653,7 +653,12 @@ class PointCloud:
                 mlab.show()
 
     def generate_r_neighbor(self, rate=0.05, show_result=False):
+        """
 
+        :param rate: range ratio of the neighbor scale
+        :param show_result:
+        :return:
+        """
         assert 0 < rate < 1
         r = self.range * rate
         p_distance = distance.cdist(self.position, self.position)
@@ -787,16 +792,56 @@ class PointCloud:
             assert not np.isnan(result.any())
         return result
 
-    def compute_key_points(self, percentage=0.1, show_result=False, rate=0.05):
+    def resolution_kpts(self, Importance_Ranking, Voxel_Size, Sampled_Number):
+        """
+        :param Pointcloud:  点云nx3
+        :param Importanace_Ranking:重要度 每个点的重要度排序索引（浮点数） nx1
+        :param Voxel_Size:体素大小
+        :param Sampled_Number:采样点的个数
+        :return:
+        """
+        ranking_set = {}  # 字典里面每个键代表一个有点的体素
+        sampled_pointcloud = np.zeros((Sampled_Number, 3))  # 初始化输出点云数组
+
+        # 计算点云在空间中的立方体
+        distance_max = np.amax(self.position, axis=0)
+        distance_min = np.amin(self.position, axis=0)
+        # 计算立方体x,y方向的体素个数
+        number_x = math.ceil((distance_max[0] - distance_min[0]) / Voxel_Size)
+        number_y = math.ceil((distance_max[1] - distance_min[1]) / Voxel_Size)
+        # 用点云减去最小坐标再除以体素尺寸，得到的nx3为xyz方向上以体素尺寸为单位长度的坐标(浮点数)
+        sequence_number = (self.position - distance_min) / Voxel_Size
+        for i in range(len(sequence_number)):  # 对每个点
+            sequence = (math.ceil(sequence_number[i][2]) - 1) * number_x * number_y + (
+                        math.ceil(sequence_number[i][1]) - 1) * \
+                       number_x + math.ceil(sequence_number[i][0])  # 计算这个点在体素空间中的位置
+            if str(sequence) in ranking_set:
+                if Importance_Ranking[i] > ranking_set[str(sequence)][0]:
+                    ranking_set[str(sequence)] = [Importance_Ranking[i], i]
+            else:
+                ranking_set[str(sequence)] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
+        if len(ranking_set) < Sampled_Number:
+            print("The value of Voxel_Size is too large and needs to be reduced!!!")
+            raise ValueError
+        sample_sequence = np.zeros(shape=[len(ranking_set), 2])
+        for i, j in enumerate(ranking_set):
+            sample_sequence[i, :] = ranking_set[j]  # 字典里面每个键都是一个列表，保存的是一个体素内所有点的重要度，取最大的生成一个列表
+        sample_sequence = sample_sequence[sample_sequence[:, 0].argsort()]  # 排序，得到重要度从大到小的排序
+        ind = np.empty((Sampled_Number,))
+        for k in range(Sampled_Number):
+            sampled_pointcloud[k, :] = self.position[int(sample_sequence[k, 1]), :]
+            ind[k] = sample_sequence[k, 1]
+        return sampled_pointcloud, ind.astype(int)
+
+    def compute_key_points(self, percentage=0.1, show_result=False, usr_resolution_control=True, rate=0.05):
         """
         Intrinsic shape signature key point detection
         :param percentage:  10%
         :param show_result:
-        :param rate:
+        :param rate: range ratio
         :return:  return nothing, store the key points in self.keypoints
         """
 
-        # todo resolution control, voxelization for the key p
         nb_key_pts = int(self.nb_points*percentage)
         self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', rate=rate)  # nx3x3
 
@@ -805,7 +850,12 @@ class PointCloud:
         assert np.isreal(eig_vals.all())
         eig_vals = np.sort(eig_vals, axis=1)  # n x 3
         smallest_eigvals = eig_vals[:, 0]  # nx1
-        key_pts_idx = np.argpartition(smallest_eigvals,  nb_key_pts, axis=0)[0:nb_key_pts]
+
+        if usr_resolution_control:
+            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/40, Sampled_Number=nb_key_pts)
+        else:
+            key_pts_idx = np.argpartition(smallest_eigvals,  nb_key_pts, axis=0)[0:nb_key_pts]
+
         self.keypoints = key_pts_idx
 
         if show_result:
@@ -822,8 +872,9 @@ class PointCloud:
             mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           self.position[:, 2] * 10 ** -9 + self.range * 0.005,
                           color=(0, 1, 0), scale_factor=1.5)
-
             mlab.show()
+
+
 
 
 def point2plane_dist(point, plane):
@@ -1030,8 +1081,9 @@ if __name__ == "__main__":
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'
 
     pc = PointCloud(base_path + '/lab4/final.ply')
-    pc.down_sample(1024)
-    pc.compute_key_points(rate=0.1, show_result=True)
+    pc.down_sample(2048)
+    pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=False)
+    pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=True)
     # c.generate_r_neighbor(rate=0.15, show_result=True)
 
     # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False)

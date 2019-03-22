@@ -734,10 +734,10 @@ def train_one_epoch(sess, ops, train_writer, epoch):
                      ops['is_training_pl']: is_training, }
 
         summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['merged'], ops['step'],
-                                                                               ops['train_op'], ops['loss'],
-                                                                               ops['pred'], ops['trans_dis'],
-                                                                               ops['compare'], ops['original_pc'],
-                                                                               ops['recovered_pc']], feed_dict= feed_dict)
+                                                                                   ops['train_op'], ops['loss'],
+                                                                                   ops['pred'], ops['trans_dis'],
+                                                                                   ops['compare'], ops['original_pc'],
+                                                                                   ops['recovered_pc']], feed_dict= feed_dict)
 
         # if epoch % 20 == 0 and batch_idx == 0:  # show the first batch
         #     # print('not show now')
