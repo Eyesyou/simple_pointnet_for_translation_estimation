@@ -64,9 +64,16 @@ def tf_euler_pos_2_homo(batch_input):
 
 
 def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=True):
-    """ Input (XYZ) Transform Net, input is BxNx3
-        Return:
-            Transformation matrix of size BX7 ,K=3 in ordinary"""
+    """
+    perform skip link aggregation
+    :param point_cloud:   Input (XYZ) Transform Net, input is BxNx3
+    :param point_cloud_local:
+    :param is_training:
+    :param use_local:
+    :return: Transformation matrix of size BX7 ,K=3 in ordinary
+    """
+
+
 
     batch_size = point_cloud.get_shape()[0].value
     num_point = point_cloud.get_shape()[1].value
@@ -80,19 +87,20 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     #                    bn=True, is_training=is_training,
     #                     scope='hconv111', bn_decay=bn_decay, weight_decay=0.0)     #BxNx1x64 4 variables of weight bises beta gamma
 
-    net = tf.layers.conv2d(inputs=net, filters=64, kernel_size=[1, 3])   # Bx1024x1x64
-    test_layer_output2 = net
+    point_wise_1 = tf.layers.conv2d(inputs=net, filters=64, kernel_size=[1, 3])   # Bx1024x1x64
+    test_layer_output2 = point_wise_1
 
     #net = tf_util.conv2d(net, 128, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv12', bn_decay=bn_decay, weight_decay=0.0)
-    net = tf.layers.conv2d(inputs=net, filters=64, kernel_size=[1, 1], activation=tf.nn.relu)
-    net = tf.layers.conv2d(inputs=net, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)
+    point_wise_2 = tf.layers.conv2d(inputs=point_wise_1, filters=128, kernel_size=[1, 1], activation=tf.nn.relu)
+
+    point_wise_3 = tf.layers.conv2d(inputs=point_wise_2, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)  # BxNx1x512
 
     #net = tf_util.conv2d(net, 1024, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv13', bn_decay=bn_decay, weight_decay=0.0)
     # net = tf.layers.conv2d(inputs=net, filters=1024, kernel_size=[1, 1], activation=tf.nn.relu)
-    point_wise = tf.layers.conv2d(inputs=net, filters=1024, kernel_size=[1, 1], activation=tf.nn.relu)   # BxNx1x1024
-    integrated = tf_util.max_pool2d(point_wise, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1x1x1024
+
+    integrated = tf_util.max_pool2d(point_wise_3, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1x1x512
 
     integrated = tf.reshape(integrated, [batch_size, -1])  # B x 1024
 
@@ -107,12 +115,12 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     #                                      bn_decay=bn_decay, weight_decay = 0.0)
 
     integrated = tf.layers.dense(integrated, 512)
-    integrated = tf.layers.dense(integrated, 256)
-    integrated = tf.layers.dense(integrated, 128)  # Bx128
+    integrated = tf.layers.dense(integrated, 256)   # Bx256
     integrated = tf.expand_dims(integrated, axis=1)
-    integrated = tf.expand_dims(integrated, axis=1)  # Bx1x1x128
-    integrated = tf.tile(integrated, [1, 1024, 1, 1])  # BxNx1x128
-    net = tf.concat([integrated, point_wise], axis=-1)   # BxNx1x(1024+128)
+    integrated = tf.expand_dims(integrated, axis=1)   # Bx1x1x256
+    integrated = tf.tile(integrated, [1, 1024, 1, 1])   # BxNx1x256
+
+    net = tf.concat([point_wise_1, point_wise_2, point_wise_3, integrated], axis=-1)    # BxNx1x(64+128+512+ 256)
     net = tf_util.max_pool2d(net, [num_point, 1], padding='VALID', scope='hmaxpool2')  # BxNx1x1024
     net = tf.reshape(net, [batch_size, -1])  # B x X
     net = tf.layers.dense(net, 512)
@@ -160,13 +168,6 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 1024
         net = tf.concat([net, point_cloud_local], axis=-1)  # b x 1024
 
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
     net = tf.layers.dense(net, 512, activation=tf.nn.relu)
     net = tf.layers.dense(net, 512, activation=tf.nn.relu)  # BX128
 

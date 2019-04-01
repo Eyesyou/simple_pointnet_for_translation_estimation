@@ -34,6 +34,7 @@ decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
 decay_rate = 0.999
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
+batchsize = 100
 max_epoch = 50  # 200
 nb_classes = 4
 nb_points = 1024
@@ -42,7 +43,7 @@ key_pts_percentage = 0.1
 # pc_tile = np.tile(pc, (tile_size, 1, 1))   # tile_size*4 x 1024 x 3
 # pc_label = np.tile(np.array([0, 1, 2, 3]), tile_size)
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data_with_re_ctrl.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
@@ -67,7 +68,7 @@ pc_tile *= 100   # for scale
 
 pc_label = readh5['train_labels'][:]
 
-batchsize = 100
+
 
 light = np.array([[1,  0,  0],
                  [0,  0,  1],
@@ -1124,8 +1125,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="with_local_model16.ckpt", use_local=True)
+    train(model_name="with_local_model18.ckpt", use_local=True)
 
-    test(os.path.join('tmp', "with_local_model16.ckpt"), use_local=True, show_result=False, times=5)  # test times
+    test(os.path.join('tmp', "with_local_model18.ckpt"), use_local=True, show_result=False, times=5)  # test time
     #
     # LOG_FOUT.close()
