@@ -48,7 +48,7 @@ readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/no
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
-quaternion_range = [7, 10]
+quaternion_range = [0, 0.2]
 translation_range = [-5, 5]
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100   # for scale
@@ -324,7 +324,7 @@ def train(model_name, use_local=False):
         # </editor-fold>
         # Add summary writers
         # merged = tf.merge_all_summaries()
-        merged = tf.summary.merge_all()
+        train_summary_merged = tf.summary.merge_all()
         train_writer = tf.summary.FileWriter(os.path.join('log', 'train'), sess.graph)
         # test_writer = tf.summary.FileWriter(os.path.join('log', 'test'))
         # Init variables
@@ -338,7 +338,7 @@ def train(model_name, use_local=False):
                'pred': pred,   # prediction from network
                'loss': loss,
                'train_op': train_op,
-               'merged': merged,
+               'train_summary_merged': train_summary_merged,
                'step': batch,
                'trans_dis': end_points['trans_dis'],
                'compare': end_points['compare'],
@@ -371,7 +371,7 @@ def train(model_name, use_local=False):
 
 
 @timeit
-def test(model_path, show_result=False, use_local=False, times=1):
+def inference(model_path, show_result=False, use_local=False, times=1):
     """
     After trainning , restore the saved pre-trained model, and test for inference.
     :param model_path:
@@ -402,7 +402,7 @@ def test(model_path, show_result=False, use_local=False, times=1):
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     config.log_device_placement = True
-    merged = tf.summary.merge_all()
+    inference_summary_merged = tf.summary.merge_all()
     sess = tf.Session(config=config)
 
     # Restore variables from disk.
@@ -419,7 +419,7 @@ def test(model_path, show_result=False, use_local=False, times=1):
            'pred': pred,  # prediction from network
            'loss': loss,
            # 'train_op': train_op,
-           'merged': merged,
+           'inference_summary_merged': inference_summary_merged,
            'step': tf.Variable(initial_value=np.ones(shape=1)),   # TODO
            'trans_dis': end_points['trans_dis'],
            'compare':  end_points['compare'],
@@ -457,7 +457,7 @@ def test(model_path, show_result=False, use_local=False, times=1):
         opc += rand_trans
         rpc += rand_trans
 
-        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
+        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=0.99, high=1),
                                   np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
                                   np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
                                   np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
@@ -505,7 +505,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
     print('generate random_pose once here:')
-    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
+    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=0.99, maxval=1),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
@@ -683,14 +683,14 @@ def placeholder_inputs(batch_size, num_point):
     return pointclouds_pl, labels_pl
 
 
-def get_learning_rate(batch):
+def get_learning_rate(batch, truncated=0.0000001):
     learning_rate = tf.train.exponential_decay(
                         init_learning_rate,  # Base learning rate. default value:0.00001
                         batch * batchsize,  # Current index into the dataset.
                         decay_step,          # learning rate Decay step.
                         decay_rate,          # Decay rate.
                         staircase=True)
-    learning_rate = tf.maximum(learning_rate, 0.0000001)  # CLIP THE LEARNING RATE! do not small than this
+    learning_rate = tf.maximum(learning_rate, truncated)  # CLIP THE LEARNING RATE! do not small than this
     return learning_rate
 
 
@@ -734,7 +734,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
                      ops['labels_pl']: current_label[start_idx:end_idx],
                      ops['is_training_pl']: is_training, }
 
-        summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['merged'], ops['step'],
+        summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['train_summary_merged'], ops['step'],
                                                                                    ops['train_op'], ops['loss'],
                                                                                    ops['pred'], ops['trans_dis'],
                                                                                    ops['compare'], ops['original_pc'],
@@ -788,7 +788,7 @@ def eval_one_epoch(sess, ops):
 
         #print('evel data:', current_data[start_idx:end_idx, :, :])
 
-        summary, step, loss_val, pred_val, layer1, layer2, eval_posdis = sess.run([ops['merged'], ops['step'],
+        summary, step, loss_val, pred_val, layer1, layer2, eval_posdis = sess.run([ops['inference_summary_merged'], ops['step'],
                                                                                    ops['loss'], ops['pred'],
                                                                                    ops['original_pc'],
                                                                                    ops['recovered_pc'],
@@ -1127,6 +1127,6 @@ if __name__ == "__main__":
 
     train(model_name="with_local_model18.ckpt", use_local=True)
 
-    test(os.path.join('tmp', "with_local_model18.ckpt"), use_local=True, show_result=False, times=5)  # test time
+    inference(os.path.join('tmp', "with_local_model18.ckpt"), use_local=True, show_result=False, times=5)  # test time
     #
     # LOG_FOUT.close()
