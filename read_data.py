@@ -9,6 +9,7 @@ from show_pc import PointCloud
 from plyfile import PlyData, PlyElement
 from scipy import spatial
 from pointcloud_sample import resolution_kpts
+from copy import deepcopy
 import tensorflow as tf
 
 
@@ -19,6 +20,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
     :param n:
     :param base_path:
     :param use_key_feature:
+    :param nb_types: number of classes of used object
     :return:
     """
 
@@ -35,7 +37,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                     print('reading number', i + 1, 'th lab'+str(k+1)+' point clouds')
 
                 if use_key_feature:
-                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
+                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/random_sample'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
                     pc = PointCloud(pc)
                     pc.normalize()
 
@@ -51,7 +53,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                     pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
                 else:
                     pc_tile[j, :, :] = np.expand_dims(
-                        np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt'), axis=0)
+                        np.loadtxt(base_path+'/lab'+str(k+1)+'/random_sample'+str(i)+'.txt'), axis=0)
 
                 # print('-----------------------------------------')
                 # print('one pc cost total:{}second'.format(te-ts))
@@ -201,7 +203,7 @@ def test_data(h5_path='', rand_trans=False, showinone=False):
         plt.show()
 
 
-def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000):
+def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000, not_project=False):
     #
     # pc = np.loadtxt('carburator.txt')   # n x 3
     # np.random.shuffle(pc)  # only shuffle the first axis
@@ -243,53 +245,27 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
     if add_outlier is not None:
         pc.add_outlier(factor=add_outlier)
 
-    for i in range(n):
-        if i % 10 == 0:
-            print('saving number', i+1, 'th lab_project point clouds')
-        try:
-            pc.half_by_plane(grid_resolution=(300, 300))
-            np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-        except ValueError:
+    if not_project:
+        for i in range(n):
+            if i % 10 == 0:
+                print('saving number', i+1, 'th lab random sample point clouds')
+            temp = deepcopy(pc)
+            temp.down_sample(number_of_downsample=1024)
+            np.savetxt(base_path + '/random_sample' + str(i) + '.txt', temp.position, delimiter=' ')
+    else:
+        for i in range(n):
+            if i % 10 == 0:
+                print('saving number', i+1, 'th lab_project point clouds')
             try:
                 pc.half_by_plane(grid_resolution=(300, 300))
-                np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
+                np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')  # pc.visible will variant
             except ValueError:
-                pc.half_by_plane(grid_resolution=(300, 300))
-                np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-
-
-    # pc = np.loadtxt('blade.txt')   # n x 3
-    # np.random.shuffle(pc)  # only shuffle the first axis
-    # pc = pc[0:10000, :]
-    # pc = PointCloud(pc)
-    # pc.add_noise(factor=0.05)
-    # pc.add_outlier(factor=0.05)
-    # for i in range(5000):
-    #     if i % 10 == 0:
-    #         print('saving number', i+1, 'th blade point clouds')
-    #     pc.half_by_plane()
-    #     np.savetxt(base_path+'/blade/blade_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-    #
-    # pc = np.loadtxt('fullbodyanya1.txt')   # n x 3
-    # np.random.shuffle(pc)  # only shuffle the first axis
-    # pc = pc[0:10000, :]
-    # pc = PointCloud(pc)
-    # pc.add_noise(factor=0.05)
-    # pc.add_outlier(factor=0.05)
-    # for i in range(1, 5000):
-    #     if i % 10 == 0:
-    #         print('saving number', i+1, 'th fullbodyanya1 point clouds')
-    #     try:
-    #         pc.half_by_plane()
-    #         np.savetxt(base_path + '/fullbodyanya1/fullbodyanya1_project' + str(i) + '.txt', pc.visible, delimiter=' ')
-    #     except ValueError:
-    #         try:
-    #             pc.half_by_plane()
-    #             np.savetxt(base_path + '/fullbodyanya1/fullbodyanya1_project' + str(i) + '.txt', pc.visible, delimiter=' ')
-    #         except ValueError:
-    #             pc.half_by_plane()
-    #             np.savetxt(base_path + '/fullbodyanya1/fullbodyanya1_project' + str(i) + '.txt', pc.visible,
-    #                        delimiter=' ')
+                try:
+                    pc.half_by_plane(grid_resolution=(300, 300))
+                    np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
+                except ValueError:
+                    pc.half_by_plane(grid_resolution=(300, 300))
+                    np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
 
 
 def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
@@ -626,8 +602,8 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/testnormallized_project_data.h5',
-              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier', n=50)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/randomsample_data.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)', n=5000)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -646,10 +622,11 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[1024:2048, :])
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
+
     # for i in range(1, 5):
-    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab'+str(i),
-    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/clean sample/lab'+str(i)+'/final.ply',
-    #                  add_noise=None, add_outlier=None, n=5000)
+    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/lab'+str(i),
+    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/lab'+str(i)+'/final.ply',
+    #                  add_noise=None, add_outlier=None, n=5000, not_project=True)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')

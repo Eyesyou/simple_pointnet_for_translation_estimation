@@ -3,6 +3,7 @@ import numpy as np
 import copy
 from show_pc import PointCloud
 from sklearn import preprocessing
+from mayavi import mlab
 
 
 def draw_registration_result(source, target):
@@ -71,6 +72,21 @@ def icp_two_pc(source, target, draw_result=False, point2plane=False):
         source.transform(transformation)  # source point cloud apply the transformation to get target point cloud
         draw_registration_result(source, target)
     return transformation
+
+
+def draw_normal(point_cloud):
+    """
+
+    :param point_cloud:
+    :return:
+    """
+    if isinstance(point_cloud, PointCloud):
+        tmp = point_cloud
+        source = o3d.PointCloud()
+        source.points = o3d.Vector3dVector(tmp.position)
+    result = o3d.estimate_normals(source, o3d.KDTreeSearchParamHybrid(
+            radius=50, max_nn=9))
+    print('result is', result, 'result type is', type(result))
 
 
 def np_quat_pos_2_homo(batch_input):
@@ -171,7 +187,13 @@ if __name__ == "__main__":
     # print(reg_p2l.transformation)
     # print("")
     # draw_registration_result(source, target, reg_p2l.transformation)
-    base_path = '/home/ais/Documents/ASY dissertation/simple_pointnet for translation estimation/pointcloud/fullbodyanya1.ply'
+
+
+    base_path = '/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/pointcloud/fullbodyanya1.ply'
+    pc = PointCloud(base_path)
+    draw_normal(pc)
+
+
     quaternion_range = [0, 0.01]
     translation_range = [0, 0.01]
     ran_pos = np.concatenate(

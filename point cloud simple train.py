@@ -12,9 +12,9 @@ import tf_util
 from sklearn import preprocessing
 from show_samples import plotit
 import show_pc
+from show_pc import PointCloud
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
 from mayavi import mlab
-from show_pc import PointCloud
 LOG_FOUT = open('log_train.txt', 'w')
 
 # pc = np.loadtxt('monsterbladecaranya.txt')  # 4*1024 x 3
@@ -326,7 +326,7 @@ def train(model_name, use_local=False):
         # merged = tf.merge_all_summaries()
         train_summary_merged = tf.summary.merge_all()
         train_writer = tf.summary.FileWriter(os.path.join('log', 'train'), sess.graph)
-        # test_writer = tf.summary.FileWriter(os.path.join('log', 'test'))
+        test_writer = tf.summary.FileWriter(os.path.join('log', 'test'), sess.graph)
         # Init variables
         init = tf.global_variables_initializer()
         sess.run(init, {is_training_pl: True})
@@ -362,7 +362,7 @@ def train(model_name, use_local=False):
             sys.stdout.flush()
 
             train_one_epoch(sess, ops, train_writer, epoch)  # trainning and evaluation is starting simultaneous
-            eval_one_epoch(sess, ops)  # after training, evaluation is begin.
+            eval_one_epoch(sess, ops, test_writer, epoch)  # after training, evaluation is begin.
 
             # Save the variables to disk.
             if epoch % 10 == 0:
@@ -404,12 +404,12 @@ def inference(model_path, show_result=False, use_local=False, times=1):
     config.log_device_placement = True
     inference_summary_merged = tf.summary.merge_all()
     sess = tf.Session(config=config)
-
+    inference_writer = tf.summary.FileWriter(os.path.join('log', 'inference'), sess.graph)
     # Restore variables from disk.
     saver.restore(sess, model_path)
     log_string("Model restored.")
 
-    # init = tf.global_variables_initializer()
+
     # sess.run(init, {is_training_pl: False})
 
     ops = {'pointclouds_pl': pointclouds_pl,
@@ -436,11 +436,13 @@ def inference(model_path, show_result=False, use_local=False, times=1):
                      ops['is_training_pl']: False}
 
         start = time.time()
-        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
+        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, summary] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
                                                                                         ops['predict_pos'], ops['trans_dis'],
-                                                                                        ops['original_pc'], ops['recovered_pc']],
+                                                                                        ops['original_pc'], ops['recovered_pc'],
+                                                                                        ops['inference_summary_merged']],
                                                                                         feed_dict=feed_dict)
-
+        tf.summary.scalar('total_loss', total_loss)
+        inference_writer.add_summary(summary, j)
         end = time.time()
         print('inference time cost:{} s'.format(end-start))
         print('trans dis is :{}'.format(trans_dis))
@@ -763,7 +765,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
     log_string('accuracy: %f' % (total_correct / float(total_seen)))  # asy anotationed
 
 
-def eval_one_epoch(sess, ops):
+def eval_one_epoch(sess, ops, test_writer, epoch):
     """ ops: dict mapping from string to tf ops """
     total_correct = 0
     total_seen = 0
@@ -788,12 +790,14 @@ def eval_one_epoch(sess, ops):
 
         #print('evel data:', current_data[start_idx:end_idx, :, :])
 
-        summary, step, loss_val, pred_val, layer1, layer2, eval_posdis = sess.run([ops['inference_summary_merged'], ops['step'],
+        summary, step, loss_val, pred_val, layer1, layer2, eval_posdis = sess.run([ops['train_summary_merged'], ops['step'],
                                                                                    ops['loss'], ops['pred'],
                                                                                    ops['original_pc'],
                                                                                    ops['recovered_pc'],
                                                                                    ops['trans_dis']],
                                                                                    feed_dict=feed_dict)
+
+        test_writer.add_summary(summary, step)
 
     print('last step in batch of evaluation posdistance is:', eval_posdis, 'ang and trans')
         # if epoch % 5 == 0 and batch_idx == 0:  # show the first batch of every epoch
@@ -1125,8 +1129,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="with_local_model18.ckpt", use_local=True)
+    # train(model_name="with_local_model21.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "with_local_model18.ckpt"), use_local=True, show_result=False, times=5)  # test time
+    inference(os.path.join('tmp', "with_local_model21.ckpt"), use_local=True, show_result=False, times=1000)  # test time
     #
     # LOG_FOUT.close()
