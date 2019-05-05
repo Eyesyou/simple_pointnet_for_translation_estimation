@@ -35,7 +35,7 @@ decay_rate = 0.999
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
 batchsize = 100
-max_epoch = 50  # 200
+max_epoch = 5  # 200
 nb_classes = 4
 nb_points = 1024
 key_pts_percentage = 0.1
@@ -649,7 +649,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     return prediction, end_points #net is the final prediction of 4 classes
 
 
-def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=10, pose_weight=10):
+def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=1000, pose_weight=10):
     """ pred: B*NUM_CLASSES,
         label: B, """
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=label)   # pred:(Bx4) label:(B,),loss:(B,),originally logits = label, label=pred
@@ -1129,8 +1129,8 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="with_local_model21.ckpt", use_local=True)
+    # train(model_name="with_local_model28.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "with_local_model21.ckpt"), use_local=True, show_result=False, times=1000)  # test time
+    inference(os.path.join('tmp', "with_local_model28.ckpt"), use_local=True, show_result=False, times=100)  # test time
     #
     # LOG_FOUT.close()

@@ -15,6 +15,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from mayavi import mlab
 from scipy.spatial import distance
 from plyfile import PlyData, PlyElement
+from scipy import spatial  # for tree structure
 import cv2
 
 SHOW_ = """
@@ -652,15 +653,15 @@ class PointCloud:
                               color=(0, 1, 0), scale_factor=0.1)
                 mlab.show()
 
-    def generate_r_neighbor(self, rate=0.05, show_result=False):
+    def generate_r_neighbor(self, range_rate=0.05, show_result=False):
         """
 
         :param rate: range ratio of the neighbor scale
         :param show_result:
         :return:
         """
-        assert 0 < rate < 1
-        r = self.range * rate
+        assert 0 < range_rate < 1
+        r = self.range * range_rate
         p_distance = distance.cdist(self.position, self.position)
         idx = np.where((p_distance < r) & (p_distance > 0))  # choose axis 0 or axis 1
 
@@ -765,7 +766,7 @@ class PointCloud:
 
         if neighbor_pts == 'point_rneighbors':
             print('using ball query to find key points')
-            self.generate_r_neighbor(rate=rate)
+            self.generate_r_neighbor(range_rate=rate)
             whole_weight = 1 / (~np.isnan(self.point_rneighbors)).sum(1)  # do as ISS paper said
             whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
             # todo: this is an inefficient way
@@ -833,12 +834,14 @@ class PointCloud:
             ind[k] = sample_sequence[k, 1]
         return sampled_pointcloud, ind.astype(int)
 
-    def compute_key_points(self, percentage=0.1, show_result=False, usr_resolution_control=True, rate=0.05):
+    def compute_key_points(self, percentage=0.1, show_result=False, usr_resolution_control=True, rate=0.05,
+                           show_saliency=False):
         """
-        Intrinsic shape signature key point detection
+        Intrinsic shape signature key point detection, salient point detection
         :param percentage:  10%
         :param show_result:
         :param rate: range ratio
+        :param show_saliency： show the heat map of saliency of a point cloud
         :return:  return nothing, store the key points in self.keypoints
         """
 
@@ -849,10 +852,10 @@ class PointCloud:
         eig_vals = np.linalg.eigvals(self.weighted_covariance_matix)
         assert np.isreal(eig_vals.all())
         eig_vals = np.sort(eig_vals, axis=1)  # n x 3
-        smallest_eigvals = eig_vals[:, 0]  # nx1
+        smallest_eigvals = eig_vals[:, 0]  # n x 1
 
         if usr_resolution_control:
-            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/40, Sampled_Number=nb_key_pts)
+            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/50, Sampled_Number=nb_key_pts)
         else:
             key_pts_idx = np.argpartition(smallest_eigvals,  nb_key_pts, axis=0)[0:nb_key_pts]
 
@@ -874,8 +877,12 @@ class PointCloud:
                           color=(0, 1, 0), scale_factor=1.5)
             mlab.show()
 
-
-
+        if show_saliency:
+            fig3 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+            mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                          smallest_eigvals,
+                          colormap='Spectral', scale_factor=1.5, figure=fig3)
+            mlab.show()
 
 def point2plane_dist(point, plane):
     """
@@ -909,7 +916,7 @@ def point2line_dist(point, line_origin, line_vector):
     return S/np.linalg.norm(line_vector)
 
 
-def show_projection(pc_path='', nb_sample=10000, show_origin=False):
+def show_projection(pc_path='', nb_sample=10000, show_origin=False, add_noise=True):
     """
     show the vary projection result for one point cloud
     :param pc_path: ply file format, numpy array of nx3
@@ -1005,10 +1012,11 @@ def show_projection(pc_path='', nb_sample=10000, show_origin=False):
             # only shows the projection front point cloud
             for i in range(2):
                 # add the screen capture0
-                pc_class.add_noise()
-                pc_class.add_outlier()
+                if add_noise:
+                    pc_class.add_noise()
+                    pc_class.add_outlier()
 
-                pc_class.half_by_plane(grid_resolution=(256, 256))
+                pc_class.half_by_plane(grid_resolution=(200, 200))
 
                 x = pc_class.visible[:, 0]
                 y = pc_class.visible[:, 1]
@@ -1027,10 +1035,10 @@ def show_projection(pc_path='', nb_sample=10000, show_origin=False):
 
                 #mlab.quiver3d(x, y, z, u, v, w, colormap='RdYlGn', mode='2darrow', figure=m_fig)   # scale_factor=0.05
 
-                mlab.points3d(x, y, z, z*10**-3+1, colormap='Spectral', scale_factor=3, figure=m_fig)
+                mlab.points3d(x, y, z, z*10**-3+1, colormap='Spectral', scale_factor=2, figure=m_fig)
 
                 mlab.gcf().scene.parallel_projection = True  # parallel projection
-                # mlab.show() # for testing, annotate this for automation
+                mlab.show() # for testing, annotate this for automation
                 f = mlab.gcf()  # this two line for mlab.screenshot to work
                 f.scene._lift()
                 img = mlab.screenshot()
@@ -1042,7 +1050,118 @@ def show_projection(pc_path='', nb_sample=10000, show_origin=False):
 
             plt.subplots_adjust(wspace=0, hspace=0)
             #plt.show()
-        plt.savefig('/home/sjtu/Pictures/asy/point clouds/dataset/lab1_'+str(k+1)+'.png')
+        # plt.savefig('/home/sjtu/Pictures/asy/point clouds/dataset/lab1_'+str(k+1)+'.png')
+
+
+def chamfer_dist(arr1, arr2, chose_rate=1):
+    """
+    return the chamfer distance of two point cloud, point cloud don't have to be the same length
+    :param arr1: nx3 np array
+    :param arr2: mx3 np array
+    :param chose_rate: chose minimum distance in the correspondense such that partial point cloud can be measured
+    :return: chamfer distance of two point cloud
+    """
+    if isinstance(arr1, PointCloud):
+        arr1 = arr1.position
+    if isinstance(arr2, PointCloud):
+        arr2 = arr2.position
+    assert np.shape(arr1)[1] == np.shape(arr2)[1]
+
+    def compute_dist(A, B, chose_rate=chose_rate):
+        m = np.shape(A)[0]
+        n = np.shape(B)[0]
+        k_th = np.rint(m * chose_rate) - 1
+        k_th = k_th.astype(np.int)
+        dim = np.shape(A)[1]
+        dist = np.zeros((m, ))
+        for k in range(m):
+            C = np.ones([n, 1]) @ A[[k], :]
+            D = np.multiply((C-B), (C-B))
+            D = np.sqrt(D@np.ones((dim, 1)))
+            dist[k] = np.min(D)
+        result = np.partition(dist, k_th)
+        result = result[:k_th]
+        return np.mean(result)
+    return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
+
+
+def hausdorff_dist(arr1, arr2, chose_rate=1):
+    """
+    return the hausdorff distance of two point cloud, point cloud don't have to be the same length
+    :param arr1: nx3 np array
+    :param arr2: mx3 np array
+    :param chose_rate: chose minimum distance in the correspondense such that partial point cloud can be measured, [0,1]
+    :return: hausdorff distance of two point clouds
+    """
+    if isinstance(arr1, PointCloud):
+        arr1 = arr1.position
+    if isinstance(arr2, PointCloud):
+        arr2 = arr2.position
+
+    assert np.shape(arr1)[1] == np.shape(arr2)[1]
+
+    def compute_dist(A, B, chose_rate=chose_rate):
+        m = np.shape(A)[0]
+        n = np.shape(B)[0]
+        k_th = np.rint(m*chose_rate)-1
+        k_th = k_th.astype(np.int)
+        dim = np.shape(A)[1]
+        dist = np.zeros((m, ))
+        for k in range(m):
+            C = np.ones([n, 1]) @ A[[k], :]
+            D = np.multiply((C-B), (C-B))
+            D = np.sqrt(D@np.ones((dim, 1)))
+            dist[k] = np.min(D)
+        result = np.partition(dist, k_th)
+        return result[k_th]
+    return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
+
+
+def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20):
+    """
+    compute key points of arr1, keep in mind the arr1 are salient points from point clouds
+    :param arr1:
+    :param nb_pts:
+    :param pts_range:
+    :return:
+    """
+    if isinstance(arr1, PointCloud):
+        pts_range = arr1.range
+        arr1 = arr1.position
+
+    n = np.shape(arr1)[0]
+    intra_cluster_dist = pts_range / 30   # parameters to be tuned!
+    inter_cluster_dist = pts_range / 20    # parameters to be tuned!
+
+    tree = spatial.cKDTree(arr1)
+    clusters = []
+    for i in range(nb_pts * 5):
+        idx = np.random.choice(n)
+        pts = arr1[idx, :]
+        cluster = tree.query_ball_point(pts, intra_cluster_dist)
+        cluster = list(filter(lambda a: a != idx, cluster))
+        if len(cluster) > 4:  # minimum number of points in a cluster
+            clusters.append(cluster)
+    print(clusters)
+    clusters.sort(key=len)
+    assert clusters
+
+    centers = np.mean(arr1[clusters[0], :], axis=0, keepdims=True)
+    tree = spatial.cKDTree(centers)
+
+    for i in range(len(clusters)-1):
+        center = np.mean(arr1[clusters[i+1], :], axis=0)
+        if not tree.query_ball_point(center, inter_cluster_dist):
+            center = center[np.newaxis, :]
+            centers = np.concatenate([centers, center], axis=0)
+        else:
+            print('reject one point')
+    assert np.shape(centers)[0] > nb_pts
+    centers = centers[:nb_pts, :]
+
+    print(centers)
+    return centers
+
 
 if __name__ == "__main__":
 
@@ -1076,14 +1195,25 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
 
-    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
+    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
 
-    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'
+    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'
+    # pc_path1 = base_path + '/lab4/final.ply'
+    # pc = PointCloud(base_path + '/lab4/final.ply')
+    # pc.down_sample(2048)
+    # pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=False)
+    # pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=True)
+    # # c.generate_r_neighbor(range_rate=0.15, show_result=True)
 
-    pc = PointCloud(base_path + '/lab4/final.ply')
-    pc.down_sample(2048)
-    pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=False)
-    pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=True)
-    # c.generate_r_neighbor(rate=0.15, show_result=True)
+    # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False, add_noise=False)
+    pc = PointCloud(pc_path1)
+    pc.down_sample(number_of_downsample=10000)
+    pc.compute_key_points(show_saliency=True)
 
-    # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False)
+    key_pts = region_growing_cluster_keypts(pc)
+    # print('key_pts:', key_pts)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    mlab.points3d(key_pts[:, 0], key_pts[:, 1], key_pts[:, 2], key_pts[:, 2] * 10 ** -9 + 1, color=(1,0,0), scale_factor=3)
+    mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2], pc.position[:, 2] * 10 ** -9 + 1, color=(0, 1, 0), scale_factor=1)
+    mlab.show()
