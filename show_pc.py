@@ -372,6 +372,7 @@ class PointCloud:
         self.point_rneighbors = None
         self.keypoints = None  # k , index of k key points in the point cloud
         self.weighted_covariance_matix = None
+        self.deficiency = None
         print(self.nb_points, ' points', 'range:', self.range)
 
     def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
@@ -653,11 +654,12 @@ class PointCloud:
                               color=(0, 1, 0), scale_factor=0.1)
                 mlab.show()
 
-    def generate_r_neighbor(self, range_rate=0.05, show_result=False):
+    def generate_r_neighbor(self, range_rate=0.05, show_result=False, use_dificiency=False):
         """
 
         :param rate: range ratio of the neighbor scale
         :param show_result:
+        :param use_dificiency: compute dificiency for every point
         :return:
         """
         assert 0 < range_rate < 1
@@ -677,6 +679,25 @@ class PointCloud:
                 self.point_rneighbors[idx[0][uni_idx[i]], j] = idx[1][k].astype(np.int32)
                 k += 1
 
+        if use_dificiency:
+            dificiency = np.ones((self.nb_points,))
+            neighbor_idx = self.point_rneighbors
+            for i in range(self.nb_points):
+                # neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
+                neighbor_points = neighbor_idx[i, :][~np.isnan(neighbor_idx[i, :])].astype(np.int32)
+                # print('neighbor_points:', neighbor_points)
+                neighbor_points = self.position[neighbor_points, :]
+                flag = np.zeros((5, 5, 5), dtype=np.int32)
+                for j in range(np.shape(neighbor_points)[0]):
+                    voxel_index = (neighbor_points[j, :]-self.position[i, :])/(r/2)
+                    voxel_index = np.rint(voxel_index).astype(np.int32)+2
+                    flag[voxel_index[0]][voxel_index[1]][voxel_index[2]] = 1    # correct way to use array as index
+                dificiency[i] = np.sum(flag)/64
+                # print('dificiency:', np.sum(flag), '/', 64)
+                # [self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
+                #  self.position[neighbor_idx, 2]]
+            self.deficiency = dificiency
+            print('dificiency:', self.deficiency)
         if show_result:
             if self.keypoints is not None:
 
@@ -746,7 +767,7 @@ class PointCloud:
         self.visible = self.position
         print('after down_sampled points:', self.nb_points, ' points', 'range:', self.range)
 
-    def compute_covariance_mat(self, neighbor_pts=None, rate=0.05):
+    def compute_covariance_mat(self, neighbor_pts=None, rate=0.05, use_dificiency=False):
         """
         weighted covariance matrix, also scatter matrix
         :param neighbor_pts: b x k x d array, b is the number of points , k is the nb_neighbors,
@@ -766,7 +787,11 @@ class PointCloud:
 
         if neighbor_pts == 'point_rneighbors':
             print('using ball query to find key points')
-            self.generate_r_neighbor(range_rate=rate)
+            if use_dificiency:
+                self.generate_r_neighbor(range_rate=rate, use_dificiency=True)
+            else:
+                self.generate_r_neighbor(range_rate=rate)
+
             whole_weight = 1 / (~np.isnan(self.point_rneighbors)).sum(1)  # do as ISS paper said
             whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
             # todo: this is an inefficient way
@@ -835,7 +860,7 @@ class PointCloud:
         return sampled_pointcloud, ind.astype(int)
 
     def compute_key_points(self, percentage=0.1, show_result=False, usr_resolution_control=True, rate=0.05,
-                           show_saliency=False):
+                           use_deficiency=False, show_saliency=False):
         """
         Intrinsic shape signature key point detection, salient point detection
         :param percentage:  10%
@@ -846,13 +871,15 @@ class PointCloud:
         """
 
         nb_key_pts = int(self.nb_points*percentage)
-        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', rate=rate)  # nx3x3
+        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', rate=rate, use_dificiency=use_deficiency)  # nx3x3
 
         # compute the eigen value, the smallest eigen value is the variation of the point
         eig_vals = np.linalg.eigvals(self.weighted_covariance_matix)
         assert np.isreal(eig_vals.all())
         eig_vals = np.sort(eig_vals, axis=1)  # n x 3
         smallest_eigvals = eig_vals[:, 0]  # n x 1
+        if use_deficiency:
+            smallest_eigvals = smallest_eigvals/self.deficiency
 
         if usr_resolution_control:
             _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/50, Sampled_Number=nb_key_pts)
@@ -879,10 +906,15 @@ class PointCloud:
 
         if show_saliency:
             fig3 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
-            mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+            points = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           smallest_eigvals, scale_mode='none', scale_factor=1,
-                          colormap='Spectral', figure=fig3)
+                          colormap='blue-red', figure=fig3)
+            cb = mlab.colorbar(object=points, title='saliency')  # legend for the saliency
+            # sb = mlab.scalarbar(object=points, title='saliensy')
+            cb.label_text_property.bold = 1
+            cb.label_text_property.color = (0, 0, 0)
             mlab.show()
+
 
 def point2plane_dist(point, plane):
     """
@@ -1208,9 +1240,10 @@ if __name__ == "__main__":
     # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False, add_noise=False)
     pc = PointCloud(pc_path1)
     pc.down_sample(number_of_downsample=10000)
-    pc.compute_key_points(show_saliency=True, rate=0.05)
-    pc.compute_key_points(show_saliency=True, rate=0.1)
-    pc.compute_key_points(show_saliency=True, rate=0.2)
+    pc.compute_key_points(show_saliency=True, rate=0.025, use_deficiency=True)
+    pc.compute_key_points(show_saliency=True, rate=0.025)
+    # pc.compute_key_points(show_saliency=True, rate=0.05)
+    # pc.compute_key_points(show_saliency=True, rate=0.1)
     # key_pts = region_growing_cluster_keypts(pc)
     # # print('key_pts:', key_pts)
     # fig = plt.figure()

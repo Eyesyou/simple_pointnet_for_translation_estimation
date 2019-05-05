@@ -451,9 +451,11 @@ if __name__ == "__main__":
     # with tf.Session() as sess:
     #     b = sess.run(A)
     #     print(b)
-    a = np.random.random((1, 1024, 3))
+    a = np.zeros((4, 4))
+    b = np.array([2, 3])
+    a[b[0]][b[1]] = 1
+    print(a)
 
-    b = get_local_eig_np(a)
 
 
     pass
