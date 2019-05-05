@@ -880,8 +880,8 @@ class PointCloud:
         if show_saliency:
             fig3 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
             mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                          smallest_eigvals,
-                          colormap='Spectral', scale_factor=1.5, figure=fig3)
+                          smallest_eigvals, scale_mode='none', scale_factor=1,
+                          colormap='Spectral', figure=fig3)
             mlab.show()
 
 def point2plane_dist(point, plane):
@@ -1208,12 +1208,13 @@ if __name__ == "__main__":
     # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False, add_noise=False)
     pc = PointCloud(pc_path1)
     pc.down_sample(number_of_downsample=10000)
-    pc.compute_key_points(show_saliency=True)
-
-    key_pts = region_growing_cluster_keypts(pc)
-    # print('key_pts:', key_pts)
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    mlab.points3d(key_pts[:, 0], key_pts[:, 1], key_pts[:, 2], key_pts[:, 2] * 10 ** -9 + 1, color=(1,0,0), scale_factor=3)
-    mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2], pc.position[:, 2] * 10 ** -9 + 1, color=(0, 1, 0), scale_factor=1)
-    mlab.show()
+    pc.compute_key_points(show_saliency=True, rate=0.05)
+    pc.compute_key_points(show_saliency=True, rate=0.1)
+    pc.compute_key_points(show_saliency=True, rate=0.2)
+    # key_pts = region_growing_cluster_keypts(pc)
+    # # print('key_pts:', key_pts)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # mlab.points3d(key_pts[:, 0], key_pts[:, 1], key_pts[:, 2], key_pts[:, 2] * 10 ** -9 + 1, color=(1,0,0), scale_factor=3)
+    # mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2], pc.position[:, 2] * 10 ** -9 + 1, color=(0, 1, 0), scale_factor=1)
+    # mlab.show()
