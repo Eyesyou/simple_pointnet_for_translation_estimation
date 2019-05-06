@@ -539,7 +539,7 @@ class PointCloud:
         self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)
         print('normalized_center: ', self.center, 'normalized_range:', self.range)
 
-    def octree(self):
+    def octree(self, show_layers=False, colors = None):
         def width_first_traversal(position, size, data):
             root = OctNode(position, size, data)
 
@@ -615,6 +615,17 @@ class PointCloud:
                     root.position + [1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
                     root.size * 1 / 2, data=rfu)
             root.children = [root.ubl, root.ubr, root.ufl, root.ufr, root.dbl, root.dbr, root.dfl, root.dfr]
+
+            try:
+                assert np.shape(root.data)[0] == np.shape(root.ubl.data)[0]+np.shape(root.ubr.data)[0]+np.shape(root.ufl.data)[0]+\
+                        np.shape(root.ufr.data)[0]+np.shape(root.dbl.data)[0]+np.shape(root.dbr.data)[0]+np.shape(root.dfl.data)[0]+ \
+                       np.shape(root.dfr.data)[0]
+            except AssertionError:
+                print('assertion error:')
+                print(np.shape(root.data)[0], 'and', np.shape(root.ubl.data)[0], np.shape(root.ubr.data)[0], np.shape(root.ufl.data)[0], \
+                        np.shape(root.ufr.data)[0], np.shape(root.dbl.data)[0], np.shape(root.dbr.data)[0], np.shape(root.dfl.data)[0], \
+                       np.shape(root.dfr.data)[0])
+
             return root
 
         self.root = width_first_traversal(self.center, size=max(self.max_limit - self.min_limit), data=self.position)
@@ -626,6 +637,20 @@ class PointCloud:
                 return max([maxdepth(babe) + 1 for babe in node.children if babe is not None])
 
         self.depth = maxdepth(self.root)
+
+        if show_layers:
+            if colors is None:
+                colors = np.random.random((8, 8, 3))
+            mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+            for i, child in enumerate(self.root.children):
+                if child is not None:
+                    for j, grand_child in enumerate(child.children):
+                        if grand_child is not None:
+                            mlab.points3d(grand_child.data[:, 0], grand_child.data[:, 1], grand_child.data[:, 2],
+                                          grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, :].tolist()),
+                                          scale_mode='scalar', scale_factor=1)
+
+            mlab.show()
 
     def generate_k_neighbor(self, k=10, show_result=False):
         assert k < self.nb_points
@@ -756,16 +781,19 @@ class PointCloud:
                     mlab.show()
 
     def down_sample(self, number_of_downsample=10000):
-        choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
-        self.position = self.position[choice_idx]
-        self.min_limit = np.amin(self.position, axis=0)  # 1x3
-        self.max_limit = np.amax(self.position, axis=0)  # 1x3
-        self.range = self.max_limit - self.min_limit
-        self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
-        self.center = np.mean(self.position, axis=0)  # 1x3
-        self.nb_points = np.shape(self.position)[0]
-        self.visible = self.position
-        print('after down_sampled points:', self.nb_points, ' points', 'range:', self.range)
+        if number_of_downsample>self.nb_points:
+            pass
+        else:
+            choice_idx = np.random.choice(self.nb_points, [number_of_downsample, ])
+            self.position = self.position[choice_idx]
+            self.min_limit = np.amin(self.position, axis=0)  # 1x3
+            self.max_limit = np.amax(self.position, axis=0)  # 1x3
+            self.range = self.max_limit - self.min_limit
+            self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)  # diagonal distance
+            self.center = np.mean(self.position, axis=0)  # 1x3
+            self.nb_points = np.shape(self.position)[0]
+            self.visible = self.position
+            print('after down_sampled points:', self.nb_points, ' points', 'range:', self.range)
 
     def compute_covariance_mat(self, neighbor_pts=None, rate=0.05, use_dificiency=False):
         """
@@ -1226,8 +1254,24 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
+    colors = np.random.random((8, 8, 3))
+    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
+    pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
+    # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
+    # pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
+    # pc1 = PointCloud(pc_path1)
+    pc2 = PointCloud(pc_path2)
+    # pc3 = PointCloud(pc_path3)
+    # pc4 = PointCloud(pc_path4)
+    # pc1.down_sample()
+    pc2.down_sample()
+    # pc3.down_sample()
+    # pc4.down_sample()
 
-    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
+    # pc1.octree(show_layers=1, colors=colors)
+    pc2.octree(show_layers=1, colors=colors)
+    # pc3.octree(show_layers=1, colors=colors)
+    # pc4.octree(show_layers=1, colors=colors)
 
     # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'
     # pc_path1 = base_path + '/lab4/final.ply'
@@ -1238,10 +1282,10 @@ if __name__ == "__main__":
     # # c.generate_r_neighbor(range_rate=0.15, show_result=True)
 
     # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False, add_noise=False)
-    pc = PointCloud(pc_path1)
-    pc.down_sample(number_of_downsample=10000)
-    pc.compute_key_points(show_saliency=True, rate=0.025, use_deficiency=True)
-    pc.compute_key_points(show_saliency=True, rate=0.025)
+    # pc = PointCloud(pc_path1)
+    # pc.down_sample(number_of_downsample=10000)
+    # pc.compute_key_points(show_saliency=True, rate=0.05, use_deficiency=True)
+    # pc.compute_key_points(show_saliency=True, rate=0.05)
     # pc.compute_key_points(show_saliency=True, rate=0.05)
     # pc.compute_key_points(show_saliency=True, rate=0.1)
     # key_pts = region_growing_cluster_keypts(pc)
