@@ -617,14 +617,19 @@ class PointCloud:
             root.children = [root.ubl, root.ubr, root.ufl, root.ufr, root.dbl, root.dbr, root.dfl, root.dfr]
 
             try:
-                assert np.shape(root.data)[0] == np.shape(root.ubl.data)[0]+np.shape(root.ubr.data)[0]+np.shape(root.ufl.data)[0]+\
-                        np.shape(root.ufr.data)[0]+np.shape(root.dbl.data)[0]+np.shape(root.dbr.data)[0]+np.shape(root.dfl.data)[0]+ \
-                       np.shape(root.dfr.data)[0]
+                number_points = np.shape(root.data)[0]
+                sum = 0
+                for child in root.children:
+                    if child is not None:
+                        sum = sum + np.shape(child.data)[0]
+
+                assert number_points == sum
             except AssertionError:
                 print('assertion error:')
-                print(np.shape(root.data)[0], 'and', np.shape(root.ubl.data)[0], np.shape(root.ubr.data)[0], np.shape(root.ufl.data)[0], \
-                        np.shape(root.ufr.data)[0], np.shape(root.dbl.data)[0], np.shape(root.dbr.data)[0], np.shape(root.dfl.data)[0], \
-                       np.shape(root.dfr.data)[0])
+                for child in root.children:
+                    if child is not None:
+                        print(np.shape(child.data)[0],'and')
+
 
             return root
 
