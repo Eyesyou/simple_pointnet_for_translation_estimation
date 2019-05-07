@@ -8,6 +8,7 @@ import importlib
 import os
 import sys
 import matplotlib
+import open3d as o3d
 import time
 from matplotlib import pyplot as plt
 import random
@@ -539,9 +540,11 @@ class PointCloud:
         self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)
         print('normalized_center: ', self.center, 'normalized_range:', self.range)
 
-    def octree(self, show_layers=False, colors = None):
+    def octree(self, show_layers=0, colors=None):
         def width_first_traversal(position, size, data):
             root = OctNode(position, size, data)
+            if np.shape(np.array(list(set([tuple(t) for t in root.data]))))[0] == 1:
+                return root
 
             min = root.position + [-root.size / 2, -root.size / 2, -root.size / 2]  # minx miny minz
             max = min + root.size / 2  # maxx maxy maxz
@@ -551,6 +554,9 @@ class PointCloud:
                 root.dbl = width_first_traversal(
                     root.position + [-1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
                     root.size * 1 / 2, data=lbd)
+            elif lbd.shape[0] == 1:
+                root.dbl = OctNode(root.position + [-1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
+                                   root.size * 1 / 2, data=lbd)
 
             min = root.position + [0, -root.size / 2, -root.size / 2]  # minx miny minz
             max = min + root.size / 2  # maxx maxy maxz
@@ -560,6 +566,9 @@ class PointCloud:
                 root.dbr = width_first_traversal(
                     root.position + [1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
                     root.size * 1 / 2, data=rbd)
+            elif rbd.shape[0] == 1:
+                root.dbr = OctNode(root.position + [1 / 4 * root.size, -1 / 4 * root.size, -1 / 4 * root.size],
+                                   root.size * 1 / 2, data=rbd)
 
             min = root.position + [-root.size / 2, 0, -root.size / 2]  # minx miny minz
             max = min + root.size / 2  # maxx maxy maxz
@@ -567,6 +576,10 @@ class PointCloud:
             lfd = root.data[np.all(media, axis=1), :]
             if lfd.shape[0] > 1:
                 root.dfl = width_first_traversal(
+                    root.position + [-1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
+                    root.size * 1 / 2, data=lfd)
+            elif lfd.shape[0] == 1:
+                root.dfl = OctNode(
                     root.position + [-1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
                     root.size * 1 / 2, data=lfd)
 
@@ -578,6 +591,10 @@ class PointCloud:
                 root.dfr = width_first_traversal(
                     root.position + [1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
                     root.size * 1 / 2, data=rfd)
+            elif rfd.shape[0] == 1:
+                root.dfr = OctNode(
+                    root.position + [1 / 4 * root.size, 1 / 4 * root.size, -1 / 4 * root.size],
+                    root.size * 1 / 2, data=rfd)
 
             min = root.position + [-root.size / 2, -root.size / 2, 0]  # minx miny minz
             max = min + root.size / 2  # maxx maxy maxz
@@ -585,6 +602,10 @@ class PointCloud:
             lbu = root.data[np.all(media, axis=1), :]
             if lbu.shape[0] > 1:
                 root.ubl = width_first_traversal(
+                    root.position + [-1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
+                    root.size * 1 / 2, data=lbu)
+            elif lbu.shape[0] == 1:
+                root.ubl = OctNode(
                     root.position + [-1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
                     root.size * 1 / 2, data=lbu)
 
@@ -596,6 +617,10 @@ class PointCloud:
                 root.ubr = width_first_traversal(
                     root.position + [1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
                     root.size * 1 / 2, data=rbu)
+            elif rbu.shape[0] == 1:
+                root.ubr = OctNode(
+                    root.position + [1 / 4 * root.size, -1 / 4 * root.size, 1 / 4 * root.size],
+                    root.size * 1 / 2, data=rbu)
 
             min = root.position + [-root.size / 2, 0, 0]  # minx miny minz
             max = min + root.size / 2  # maxx maxy maxz
@@ -603,6 +628,10 @@ class PointCloud:
             lfu = root.data[np.all(media, axis=1), :]
             if lfu.shape[0] > 1:
                 root.ufl = width_first_traversal(
+                    root.position + [-1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
+                    root.size * 1 / 2, data=lfu)
+            elif lfu.shape[0] == 1:
+                root.ufl = OctNode(
                     root.position + [-1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
                     root.size * 1 / 2, data=lfu)
 
@@ -614,6 +643,11 @@ class PointCloud:
                 root.ufr = width_first_traversal(
                     root.position + [1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
                     root.size * 1 / 2, data=rfu)
+            elif rfu.shape[0] == 1:
+                root.ufr = OctNode(
+                    root.position + [1 / 4 * root.size, 1 / 4 * root.size, 1 / 4 * root.size],
+                    root.size * 1 / 2, data=rfu)
+
             root.children = [root.ubl, root.ubr, root.ufl, root.ufr, root.dbl, root.dbr, root.dfl, root.dfr]
 
             try:
@@ -624,16 +658,20 @@ class PointCloud:
                         sum = sum + np.shape(child.data)[0]
 
                 assert number_points == sum
+
             except AssertionError:
-                print('assertion error:')
+                print('assertion error, total number of points in this level is:', number_points)
+                pass
                 for child in root.children:
                     if child is not None:
-                        print(np.shape(child.data)[0],'and')
-
-
+                        print(np.shape(child.data)[0], 'and', end=' ')
+                        pass
+                print('\n')
             return root
 
-        self.root = width_first_traversal(self.center, size=max(self.max_limit - self.min_limit), data=self.position)
+        self.root = width_first_traversal(self.center,
+                                          size=2*max(max(self.max_limit - self.center), max(self.center-self.min_limit)),
+                                          data=self.position)
 
         def maxdepth(node):
             if not any(node.children):
@@ -651,8 +689,11 @@ class PointCloud:
                 if child is not None:
                     for j, grand_child in enumerate(child.children):
                         if grand_child is not None:
+                            # for k, grandgrand_child in enumerate(grand_child.children):
+                            #     if grandgrand_child is not None:
+                            k = 0
                             mlab.points3d(grand_child.data[:, 0], grand_child.data[:, 1], grand_child.data[:, 2],
-                                          grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, :].tolist()),
+                                          grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, k, :].tolist()),
                                           scale_mode='scalar', scale_factor=1)
 
             mlab.show()
@@ -948,6 +989,24 @@ class PointCloud:
             cb.label_text_property.color = (0, 0, 0)
             mlab.show()
 
+    def estimate_normals(self, max_nn=20, show_result=False):
+        o3dpc = o3d.PointCloud()
+        o3dpc.points = o3d.Vector3dVector(self.position)
+
+        o3d.estimate_normals(o3dpc, search_param=o3d.KDTreeSearchParamHybrid(
+            radius=self.range/20, max_nn=max_nn))
+
+        if show_result:
+            fig = mlab.figure(bgcolor=(1, 1, 1), size=(2000, 1000))
+
+            mlab.quiver3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                          np.asarray(o3dpc.normals)[:, 0], np.asarray(o3dpc.normals)[:, 1],
+                          np.asarray(o3dpc.normals)[:, 2], figure=fig, line_width=2, scale_factor=4, resolution=64)  # normal vectors
+
+            mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                          self.position[:, 2] * 10**-2 + 2, color=(0, 1, 0),  # +self.range * scale
+                          scale_factor=0.4, figure=fig, line_width=2, resolution=64)
+            mlab.show()
 
 def point2plane_dist(point, plane):
     """
@@ -1229,7 +1288,6 @@ def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20):
 
 
 if __name__ == "__main__":
-
     # show_projection(pc_path='fullbodyanya1.txt', show_origin=True)
     # org = cv2.imread('/home/sjtu/Pictures/asy/point clouds/1th_image_30th_epoch.png')
     # now = cv2.cvtColor(org, cv2.COLOR_BGR2GRAY)
@@ -1259,22 +1317,24 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
-    colors = np.random.random((8, 8, 3))
-    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
+    colors = np.random.random((8, 8, 8, 3))
+    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
     pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
-    # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
-    # pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
-    # pc1 = PointCloud(pc_path1)
-    pc2 = PointCloud(pc_path2)
+    pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
+    pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
+    pc = PointCloud(pc_path1)
+    pc.down_sample(number_of_downsample=1024)
+    pc.estimate_normals(show_result=True)
+    # pc2 = PointCloud(pc_path2)
     # pc3 = PointCloud(pc_path3)
     # pc4 = PointCloud(pc_path4)
     # pc1.down_sample()
-    pc2.down_sample()
+    # pc2.down_sample()
     # pc3.down_sample()
     # pc4.down_sample()
-
+    #
     # pc1.octree(show_layers=1, colors=colors)
-    pc2.octree(show_layers=1, colors=colors)
+    # pc2.octree(show_layers=1, colors=colors)
     # pc3.octree(show_layers=1, colors=colors)
     # pc4.octree(show_layers=1, colors=colors)
 

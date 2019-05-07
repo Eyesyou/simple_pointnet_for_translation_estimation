@@ -8,6 +8,7 @@ import math
 from plyfile import PlyData, PlyElement
 from scipy import spatial
 from show_pc import PointCloud
+from open3d import *
 import matplotlib.pyplot as plt
 class OctNode:
     def __init__(self, coordinates, size, data=None):
@@ -451,13 +452,28 @@ if __name__ == "__main__":
     # with tf.Session() as sess:
     #     b = sess.run(A)
     #     print(b)
-    a = np.zeros((4, 4))
-    b = np.array([2, 3])
-    a[b[0]][b[1]] = 1
-    print(a)
+
+    print("Load a ply point cloud, print it, and render it")
+    pcd = read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply")
+    print(pcd)
+    print(np.asarray(pcd.points))
+    # draw_geometries([pcd])
+
+    print("Downsample the point cloud with a voxel of 0.05")
+    downpcd = voxel_down_sample(pcd, voxel_size=0.05)
+    # draw_geometries([downpcd])
+
+    print("Recompute the normal of the downsampled point cloud")
+    estimate_normals(downpcd, search_param=KDTreeSearchParamHybrid(
+            radius=10, max_nn=30))
+    # draw_geometries([downpcd])
+
+    print("Print a normal vector of the 0th point")
+    print(downpcd.normals[0])
+    print("Print the normal vectors of the point clouds")
+    print('ture type is ', type(downpcd.normals))
+    print(np.asarray(downpcd.normals))
+    print("")
 
 
 
-    pass
-
-    # test_uniform_rotation()
