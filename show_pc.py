@@ -65,7 +65,7 @@ def show_pc(point_cloud):
     plt.show()
 
 
-def show_all(point_cloud, color=None , plot_plane=False, plot_arrow=True):
+def show_all(point_cloud, color=None, plot_plane=False, plot_arrow=True):
     """
 
     :param point_cloud:
@@ -683,7 +683,7 @@ class PointCloud:
 
         if show_layers:
             if colors is None:
-                colors = np.random.random((8, 8, 3))
+                colors = np.random.random((8, 8, 8, 3))
             mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
             for i, child in enumerate(self.root.children):
                 if child is not None:
@@ -994,19 +994,45 @@ class PointCloud:
         o3dpc.points = o3d.Vector3dVector(self.position)
 
         o3d.estimate_normals(o3dpc, search_param=o3d.KDTreeSearchParamHybrid(
-            radius=self.range/20, max_nn=max_nn))
+            radius=self.range/30, max_nn=max_nn))
 
         if show_result:
-            fig = mlab.figure(bgcolor=(1, 1, 1), size=(2000, 1000))
+            fig = mlab.figure(bgcolor=(1, 1, 1), size=(4000, 4000))
 
             mlab.quiver3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           np.asarray(o3dpc.normals)[:, 0], np.asarray(o3dpc.normals)[:, 1],
-                          np.asarray(o3dpc.normals)[:, 2], figure=fig, line_width=2, scale_factor=4, resolution=64)  # normal vectors
+                          np.asarray(o3dpc.normals)[:, 2], figure=fig, line_width=2, scale_factor=2, resolution=64)  # normal vectors
 
             mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           self.position[:, 2] * 10**-2 + 2, color=(0, 1, 0),  # +self.range * scale
-                          scale_factor=0.4, figure=fig, line_width=2, resolution=64)
+                          scale_factor=0.2, figure=fig, line_width=2, resolution=64)
             mlab.show()
+
+    def kd_tree(self, show_result=False, colors=None):
+        kd_tree = spatial.KDTree(self.position, leafsize=256)
+
+        def leaf_traverse(tree, set):
+            if hasattr(tree, 'greater'):
+                leaf_traverse(tree.greater, set)
+                leaf_traverse(tree.less, set)
+            else:
+                set.append(tree.idx.tolist())
+
+        if show_result:
+            if colors is None:
+                colors = np.random.random((100, 3))
+            kd_tree = kd_tree.tree
+            leaf_set = []
+            leaf_traverse(kd_tree, leaf_set)
+            fig = mlab.figure(bgcolor=(1, 1, 1), size=(4000, 4000))
+            for i, idx in enumerate(leaf_set):
+                x = self.position[idx, 0]
+                y = self.position[idx, 1]
+                z = self.position[idx, 2]
+                mlab.points3d(x, y, z, z * 10**-2 + 2, color=tuple(colors[i,:].tolist()),  # +self.range * scale
+                              scale_factor=0.8, figure=fig, line_width=2, resolution=64)
+            mlab.show()
+
 
 def point2plane_dist(point, plane):
     """
@@ -1317,14 +1343,31 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
-    colors = np.random.random((8, 8, 8, 3))
+
     pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
     pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
     pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
     pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
-    pc = PointCloud(pc_path1)
-    pc.down_sample(number_of_downsample=1024)
-    pc.estimate_normals(show_result=True)
+    pc1 = PointCloud(pc_path1)
+    pc2 = PointCloud(pc_path2)
+    pc3 = PointCloud(pc_path3)
+    pc4 = PointCloud(pc_path4)
+    pc4 = PointCloud(pc4.position*2)
+
+    pc1.down_sample(number_of_downsample=4096)
+    pc2.down_sample(number_of_downsample=4096)
+    pc3.down_sample(number_of_downsample=4096)
+    pc4.down_sample(number_of_downsample=4096)
+    colors = np.random.random((100, 3))
+    pc1.kd_tree(show_result=True, colors=colors)
+    pc2.kd_tree(show_result=True, colors=colors)
+    pc3.kd_tree(show_result=True, colors=colors)
+    pc4.kd_tree(show_result=True, colors=colors)
+
+
+    # pc.estimate_normals(max_nn=10, show_result=True)
+    # pc.down_sample(number_of_downsample=1024)
+    # pc.estimate_normals(max_nn=10, show_result=True)
     # pc2 = PointCloud(pc_path2)
     # pc3 = PointCloud(pc_path3)
     # pc4 = PointCloud(pc_path4)
