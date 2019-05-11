@@ -325,6 +325,52 @@ def apply_homo_to_pc(pc_batch_input, homo):
     return batch_out
 
 
+def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20, intra_dist= 1/30, inter_dist=1/20):
+    """
+    compute key points of arr1, keep in mind the arr1 are salient points from point clouds
+    :param arr1:
+    :param nb_pts:
+    :param pts_range:
+    :return:
+    """
+    if isinstance(arr1, PointCloud):
+        pts_range = arr1.range
+        arr1 = arr1.position
+
+    n = np.shape(arr1)[0]
+    intra_cluster_dist = pts_range * intra_dist  # parameters to be tuned!
+    inter_cluster_dist = pts_range * inter_dist  # parameters to be tuned!
+
+    tree = spatial.cKDTree(arr1)
+    clusters = []
+    for i in range(nb_pts * 10):
+        idx = np.random.choice(n)
+        pts = arr1[idx, :]
+        cluster = tree.query_ball_point(pts, intra_cluster_dist)
+        cluster = list(filter(lambda a: a != idx, cluster))
+        if len(cluster) > 4:  # minimum number of points in a cluster
+            clusters.append(cluster)
+
+    clusters.sort(key=len)
+    assert clusters
+
+    centers = np.mean(arr1[clusters[0], :], axis=0, keepdims=True)
+    tree = spatial.cKDTree(centers)
+
+    for i in range(len(clusters) - 1):
+        center = np.mean(arr1[clusters[i + 1], :], axis=0)
+        if not tree.query_ball_point(center, inter_cluster_dist):
+            center = center[np.newaxis, :]
+            centers = np.concatenate([centers, center], axis=0)
+            tree = spatial.cKDTree(centers)  # update the tree
+        else:
+            # print('reject one point')
+            pass
+    assert np.shape(centers)[0] > nb_pts
+    centers = centers[:nb_pts, :]
+
+
+    return centers
 
 
 class OctNode:
@@ -374,6 +420,7 @@ class PointCloud:
         self.keypoints = None  # k , index of k key points in the point cloud
         self.weighted_covariance_matix = None
         self.deficiency = None
+        self.saliency =None
         print(self.nb_points, ' points', 'range:', self.range)
 
     def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
@@ -937,9 +984,9 @@ class PointCloud:
                            use_deficiency=False, show_saliency=False):
         """
         Intrinsic shape signature key point detection, salient point detection
-        :param percentage:  10%
+        :param percentage:  ratio of key points to be detected
         :param show_result:
-        :param rate: range ratio
+        :param rate: range ratio to search covariance
         :param show_saliency： show the heat map of saliency of a point cloud
         :return:  return nothing, store the key points in self.keypoints
         """
@@ -954,9 +1001,9 @@ class PointCloud:
         smallest_eigvals = eig_vals[:, 0]  # n x 1
         if use_deficiency:
             smallest_eigvals = smallest_eigvals/self.deficiency
-
+        self.saliency = smallest_eigvals
         if usr_resolution_control:
-            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/50, Sampled_Number=nb_key_pts)
+            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/70, Sampled_Number=nb_key_pts)
         else:
             key_pts_idx = np.argpartition(smallest_eigvals,  nb_key_pts, axis=0)[0:nb_key_pts]
 
@@ -1032,6 +1079,45 @@ class PointCloud:
                 mlab.points3d(x, y, z, z * 10**-2 + 2, color=tuple(colors[i,:].tolist()),  # +self.range * scale
                               scale_factor=0.8, figure=fig, line_width=2, resolution=64)
             mlab.show()
+
+    def region_growing(self, show_result=False):
+        """
+
+        :param show_result:
+        :return:
+        """
+        self.compute_key_points(percentage=0.2)
+        centers = region_growing_cluster_keypts(self.position[self.keypoints, :], nb_pts=self.nb_points//100,
+                                                pts_range=self.range)
+        print(' region growing key points is :', centers)
+        if show_result:
+            fig = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+            # origin points
+            mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                          self.position[:, 2] * 10 ** -9 + self.range * 0.005,
+                          color=(0, 1, 0), scale_factor=1.5)
+            # salient points
+            mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1],
+                          self.position[self.keypoints, 2],
+                          self.position[self.keypoints, 0] * 10 ** -9 + self.range * 0.005,
+                          color=(1, 1, 0),
+                          scale_factor=2, figure=fig)  # color can be tuple(np.random.random((3,)).tolist())
+            # clusters sphere
+            r = self.range/20
+
+            mlab.points3d(centers[:, 0], centers[:, 1], centers[:, 2],
+                          centers[:, 0] * 10 ** -9 + r * 2, color=(0, 0, 1), scale_factor=1,
+                          transparent=True, resolution=64,
+                          opacity=0.03)  # 0.1 for rate 0.05, 0.04 for rate 0.1, 0.025 for rate 0.15 in empirical
+
+            # key points
+            mlab.points3d(centers[:, 0], centers[:, 1], centers[:, 2],
+                          centers[:, 0] * 10 ** -9 + self.range * 0.005,
+                          color=(1, 0, 0), scale_factor=3)
+            mlab.show()
+
+
+
 
 
 def point2plane_dist(point, plane):
@@ -1267,51 +1353,6 @@ def hausdorff_dist(arr1, arr2, chose_rate=1):
     return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
 
 
-def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20):
-    """
-    compute key points of arr1, keep in mind the arr1 are salient points from point clouds
-    :param arr1:
-    :param nb_pts:
-    :param pts_range:
-    :return:
-    """
-    if isinstance(arr1, PointCloud):
-        pts_range = arr1.range
-        arr1 = arr1.position
-
-    n = np.shape(arr1)[0]
-    intra_cluster_dist = pts_range / 30   # parameters to be tuned!
-    inter_cluster_dist = pts_range / 20    # parameters to be tuned!
-
-    tree = spatial.cKDTree(arr1)
-    clusters = []
-    for i in range(nb_pts * 5):
-        idx = np.random.choice(n)
-        pts = arr1[idx, :]
-        cluster = tree.query_ball_point(pts, intra_cluster_dist)
-        cluster = list(filter(lambda a: a != idx, cluster))
-        if len(cluster) > 4:  # minimum number of points in a cluster
-            clusters.append(cluster)
-    print(clusters)
-    clusters.sort(key=len)
-    assert clusters
-
-    centers = np.mean(arr1[clusters[0], :], axis=0, keepdims=True)
-    tree = spatial.cKDTree(centers)
-
-    for i in range(len(clusters)-1):
-        center = np.mean(arr1[clusters[i+1], :], axis=0)
-        if not tree.query_ball_point(center, inter_cluster_dist):
-            center = center[np.newaxis, :]
-            centers = np.concatenate([centers, center], axis=0)
-        else:
-            print('reject one point')
-    assert np.shape(centers)[0] > nb_pts
-    centers = centers[:nb_pts, :]
-
-    print(centers)
-    return centers
-
 
 if __name__ == "__main__":
     # show_projection(pc_path='fullbodyanya1.txt', show_origin=True)
@@ -1343,26 +1384,40 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
+    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    print(' point cloud is')
+    f_list = os.listdir(base_path)
+    print(f_list)
+    for j, i in enumerate(f_list):
+        if j > 4 and os.path.splitext(i)[1] == '.ply':
+            print(' point cloud is', i)
+            pc = PointCloud(base_path+'/'+i)
+            pc.down_sample(number_of_downsample=8192)
+            pc.region_growing(show_result=True)
 
-    pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
-    pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
-    pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
-    pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
-    pc1 = PointCloud(pc_path1)
-    pc2 = PointCloud(pc_path2)
-    pc3 = PointCloud(pc_path3)
-    pc4 = PointCloud(pc_path4)
-    pc4 = PointCloud(pc4.position*2)
 
-    pc1.down_sample(number_of_downsample=4096)
-    pc2.down_sample(number_of_downsample=4096)
-    pc3.down_sample(number_of_downsample=4096)
-    pc4.down_sample(number_of_downsample=4096)
-    colors = np.random.random((100, 3))
-    pc1.kd_tree(show_result=True, colors=colors)
-    pc2.kd_tree(show_result=True, colors=colors)
-    pc3.kd_tree(show_result=True, colors=colors)
-    pc4.kd_tree(show_result=True, colors=colors)
+
+
+
+    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
+    # pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
+    # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
+    # pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
+    # pc1 = PointCloud(pc_path1)
+    # pc2 = PointCloud(pc_path2)
+    # pc3 = PointCloud(pc_path3)
+    # pc4 = PointCloud(pc_path4)
+    # pc4 = PointCloud(pc4.position*2)
+    #
+    # pc1.down_sample(number_of_downsample=4096)
+    # pc2.down_sample(number_of_downsample=4096)
+    # pc3.down_sample(number_of_downsample=4096)
+    # pc4.down_sample(number_of_downsample=4096)
+    # colors = np.random.random((100, 3))
+    # pc1.kd_tree(show_result=True, colors=colors)
+    # pc2.kd_tree(show_result=True, colors=colors)
+    # pc3.kd_tree(show_result=True, colors=colors)
+    # pc4.kd_tree(show_result=True, colors=colors)
 
 
     # pc.estimate_normals(max_nn=10, show_result=True)
