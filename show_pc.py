@@ -423,8 +423,13 @@ class OctNode:
 class PointCloud:
     def __init__(self, one_pointcloud):
         if isinstance(one_pointcloud, str):  # ply file path
-            plydata = PlyData.read(one_pointcloud)
-            points = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+            if os.path.splitext(one_pointcloud)[-1] == '.ply':
+                plydata = PlyData.read(one_pointcloud)
+                points = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
+            elif os.path.splitext(one_pointcloud)[-1] == '.txt':
+                points = np.loadtxt(one_pointcloud)
+            else:
+                raise RuntimeError('format do not support')
             one_pointcloud = points[:, 0:3]
 
         assert isinstance(one_pointcloud, np.ndarray)
@@ -633,7 +638,7 @@ class PointCloud:
         if homo_transformation == None:
             ran_pos = np.concatenate([np.random.uniform(low=0.99, high=1, size=(1, 1)),
                                       np.random.uniform(low=0.6, high=1, size=(1, 3)),
-                                      np.random.uniform(low=-100, high=100, size=(1, 3))
+                                      np.random.uniform(low=-150, high=150, size=(1, 3))
                                       ], axis=1)
             ran_pos = np.concatenate([ran_pos[:, 0:4]/np.linalg.norm(ran_pos[:, 0:4], axis=1), ran_pos[:,4:7]], axis=1)
             homo_transformation = np_quat_pos_2_homo(ran_pos)
@@ -1179,8 +1184,6 @@ class PointCloud:
 
 
 
-
-
 def point2plane_dist(point, plane):
     """
 
@@ -1350,7 +1353,7 @@ def show_projection(pc_path='', nb_sample=10000, show_origin=False, add_noise=Tr
         # plt.savefig('/home/sjtu/Pictures/asy/point clouds/dataset/lab1_'+str(k+1)+'.png')
 
 
-def chamfer_dist(arr1, arr2, chose_rate=1):
+def chamfer_dist(arr1, arr2, chose_rate=1.0):
     """
     return the chamfer distance of two point cloud, point cloud don't have to be the same length
     :param arr1: nx3 np array
@@ -1414,6 +1417,25 @@ def hausdorff_dist(arr1, arr2, chose_rate=1):
     return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
 
 
+def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_rate=0.05):
+
+    f_list = [pc_path + '/' + i for j, i in enumerate(os.listdir(pc_path)) if os.path.splitext(i)[1] == '.txt' and j<samples]
+    distance_array=[]
+    for i in f_list:
+        pc1 = PointCloud(i)
+        pc1.compute_key_points(percentage=percentage, rate=range_rate)
+        for j in f_list:
+            if j != i:
+                pc2 = PointCloud(j)
+                pc2.compute_key_points(percentage=percentage, rate=range_rate)
+                if chamfer:
+                    distance_array.append(
+                        chamfer_dist(pc1.position[pc1.keypoints,:], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                else:
+                    distance_array.append(
+                        hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+    mean = np.mean(distance_array)
+    print('mean is ', mean, 'distance array is ', distance_array)
 
 if __name__ == "__main__":
     # show_projection(pc_path='fullbodyanya1.txt', show_origin=True)
@@ -1445,16 +1467,16 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
-    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
-    print(' point cloud is')
-    f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
-    print(f_list)
-    for j, i in enumerate(f_list):
-        print(' point cloud is', i)
-        pc = PointCloud(i)
-        pc.down_sample(number_of_downsample=4096)
-        pc.compute_key_points(use_deficiency=True, show_saliency=True)
-        pc.compute_key_points(show_saliency=True)
+    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
+    robust_test_kpts(pc_path=base_path)
+    # f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
+    # print(f_list)
+    # for j, i in enumerate(f_list):
+    #     print(' point cloud is', i)
+    #     pc = PointCloud(i)
+    #     pc.down_sample(number_of_downsample=4096)
+    #     pc.compute_key_points(use_deficiency=True, show_saliency=True)
+    #     pc.compute_key_points(show_saliency=True)
     # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
     # pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
     # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'

@@ -676,5 +676,5 @@ if __name__ == "__main__":
 
     scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
                       save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation.h5',
-                      samples=100, max_nb_pc=10,
+                      samples=1, max_nb_pc=10,
                       show_result=True)
