@@ -56,7 +56,7 @@ def tf_euler_pos_2_homo(batch_input):
                            tf.constant(0.0, shape=[batch, 1])], axis=1), shape=(batch, 3, 3)), trainable=False)
 
     rotation = tf.matmul(tf.matmul(rotation_x, rotation_y), rotation_z)  # B x 3 x 3
-    transition = tf.concat([pos_x, pos_y,pos_z], axis=1)    # Bx3x1
+    transition = tf.concat([pos_x, pos_y, pos_z], axis=1)    # Bx3x1
     batch_out = tf.concat([rotation, transition], axis=2)  # Bx3x4
     pad = tf.concat([tf.constant(0.0, shape=[batch, 1, 3]), tf.ones([batch, 1, 1], dtype=tf.float32)], axis=2)  # Bx1x4
     batch_out = tf.concat([batch_out, pad], axis=1)  # Bx4x4
@@ -72,7 +72,6 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     :param use_local:
     :return: Transformation matrix of size BX7 ,K=3 in ordinary
     """
-
 
 
     batch_size = point_cloud.get_shape()[0].value

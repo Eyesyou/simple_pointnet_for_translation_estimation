@@ -301,6 +301,35 @@ def tf_quat_pos_2_homo(batch_input):
     return batch_out
 
 
+def np_quat_pos_2_homo(batch_input):
+    """
+
+    :param batch_input: batchx7 4 quaternion 3 position xyz
+    :return: transformation: batch homogeneous matrix batch x 4 x 4
+    """
+    batch = batch_input.shape[0]  #or tensor.get_shape().as_list()
+
+    w = np.expand_dims(batch_input[:, 0], axis=1)   # all shape of: (batch,1)
+    x = np.expand_dims(batch_input[:, 1], axis=1)
+    y = np.expand_dims(batch_input[:, 2], axis=1)
+    z = np.expand_dims(batch_input[:, 3], axis=1)
+
+    pos_x = batch_input[:, 4, np.newaxis]  # all shape of: (batch,1, 1)
+    pos_y = batch_input[:, 5, np.newaxis]
+    pos_z = batch_input[:, 6, np.newaxis]
+
+    rotation = np.reshape(np.concatenate([
+        1 - 2 * y * y - 2 * z * z, 2 * x * y - 2 * z * w, 2 * x * z + 2 * y * w,
+        2 * x * y + 2 * z * w, 1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w,
+        2 * x * z - 2 * y * w, 2 * y * z + 2 * x * w, 1 - 2 * x * x - 2 * y * y], axis=1), [batch, 3, 3])
+
+    transition = np.concatenate([pos_x, pos_y, pos_z], axis=1)[:, :, np.newaxis]  # Bx3x1
+    batch_out = np.concatenate([rotation, transition], axis=2)  # Bx3x4
+    pad = np.concatenate([np.zeros([batch, 1, 3]), np.ones([batch, 1, 1])], axis=2)  # Bx1x4
+    batch_out = np.concatenate([batch_out, pad], axis=1)  # B x 4 x 4
+    return batch_out
+
+
 def apply_homo_to_pc(pc_batch_input, homo):
     """
     :param pc_batch_input: batchxnx3 tensor
@@ -587,6 +616,37 @@ class PointCloud:
         self.range = np.sqrt(self.range[0] ** 2 + self.range[1] ** 2 + self.range[2] ** 2)
         print('normalized_center: ', self.center, 'normalized_range:', self.range)
 
+    def transform(self, homo_transformation=None):
+        """
+        return nothing, update point cloud
+        :param homo_transformation:
+        :return:
+        """
+        batch = 1
+        num = self.nb_points
+
+        # batch_out = tf.Variable(tf.zeros(pc_batch_input.shape), trainable=False, dtype=tf.float32)
+        # batch_out = batch_out.assign(pc_batch_input)
+        batchout = np.concatenate([self.position[np.newaxis, :], np.ones((batch, num, 1))], axis=2)
+        batchout = np.transpose(batchout, (0, 2, 1))
+
+        if homo_transformation == None:
+            ran_pos = np.concatenate([np.random.uniform(low=0.99, high=1, size=(1, 1)),
+                                      np.random.uniform(low=0.6, high=1, size=(1, 3)),
+                                      np.random.uniform(low=-100, high=100, size=(1, 3))
+                                      ], axis=1)
+            ran_pos = np.concatenate([ran_pos[:, 0:4]/np.linalg.norm(ran_pos[:, 0:4], axis=1), ran_pos[:,4:7]], axis=1)
+            homo_transformation = np_quat_pos_2_homo(ran_pos)
+
+        batchout = np.matmul(homo_transformation, batchout)  # Bx4x4 * B x 4 x n
+        batchout = np.divide(batchout, batchout[:, np.newaxis, 3, :])
+        batchout = batchout[:, :3, :]
+        batchout = np.transpose(batchout, (0, 2, 1))
+        self.position = batchout[0, :]
+        self.center = np.mean(self.position, axis=0)
+        self.min_limit = np.amin(self.position, axis=0)
+        self.max_limit = np.amax(self.position, axis=0)
+
     def octree(self, show_layers=0, colors=None):
         def width_first_traversal(position, size, data):
             root = OctNode(position, size, data)
@@ -814,8 +874,9 @@ class PointCloud:
                 # print('dificiency:', np.sum(flag), '/', 64)
                 # [self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
                 #  self.position[neighbor_idx, 2]]
+
             self.deficiency = dificiency
-            print('dificiency:', self.deficiency)
+
         if show_result:
             if self.keypoints is not None:
 
@@ -1386,19 +1447,14 @@ if __name__ == "__main__":
     # mlab.show()
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
     print(' point cloud is')
-    f_list = os.listdir(base_path)
+    f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
     print(f_list)
     for j, i in enumerate(f_list):
-        if j > 4 and os.path.splitext(i)[1] == '.ply':
-            print(' point cloud is', i)
-            pc = PointCloud(base_path+'/'+i)
-            pc.down_sample(number_of_downsample=8192)
-            pc.region_growing(show_result=True)
-
-
-
-
-
+        print(' point cloud is', i)
+        pc = PointCloud(i)
+        pc.down_sample(number_of_downsample=4096)
+        pc.compute_key_points(use_deficiency=True, show_saliency=True)
+        pc.compute_key_points(show_saliency=True)
     # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
     # pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
     # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'

@@ -13,23 +13,24 @@ from copy import deepcopy
 import tensorflow as tf
 
 
-def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types=4):
+def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types=4, show_result=False):
     """
     transform the txt point clouds into h5py dataset for simplicity.
     :param save_path:
     :param n:
     :param base_path:
-    :param use_key_feature:
+    :param use_key_feature: if you want to use the local key features
     :param nb_types: number of classes of used object
     :return:
     """
 
     # tf.enable_eager_execution()
-    pc_tile = np.empty(shape=(4*n, 1024, 3))
+    pc_tile = np.empty(shape=(nb_types*n, 1024, 3))
     if use_key_feature:
-        pc_key_feature = np.empty(shape=(4*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
+        pc_key_feature = np.empty(shape=(nb_types*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
         # 9 for multi-scale eigen-value
         #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
+
     for k in range(nb_types):  # four objects model
         for i, j in enumerate(range(k*n, (k+1)*n)):
 
@@ -37,7 +38,8 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                     print('reading number', i + 1, 'th lab'+str(k+1)+' point clouds')
 
                 if use_key_feature:
-                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/random_sample'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
+
+                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
                     pc = PointCloud(pc)
                     pc.normalize()
 
@@ -52,20 +54,20 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                     #pc_key_feature[i, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
                     pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
                 else:
+
                     pc_tile[j, :, :] = np.expand_dims(
-                        np.loadtxt(base_path+'/lab'+str(k+1)+'/random_sample'+str(i)+'.txt'), axis=0)
+                        np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt'), axis=0)
 
                 # print('-----------------------------------------')
                 # print('one pc cost total:{}second'.format(te-ts))
                 # print('----------------------------------------')
 
-
     pc_label = np.concatenate(
         [np.zeros(shape=(n,)), np.ones(shape=(n,)), 2 * np.ones(shape=(n,)), 3 * np.ones(shape=(n,))], axis=0)
 
-    train_set_shape = (4*n, 1024, 3)
-    train_set_local_shape = (4*n, 102, 9)
-    train_label_shape = (4*n, )
+    train_set_shape = (nb_types*n, 1024, 3)
+    train_set_local_shape = (nb_types*n, 102, 9)
+    train_label_shape = (nb_types*n, )
 
     hdf5_file = h5py.File(save_path, mode='a')
     hdf5_file.create_dataset('train_set', train_set_shape, np.float32)  # be careful about the dtype
@@ -203,33 +205,9 @@ def test_data(h5_path='', rand_trans=False, showinone=False):
         plt.show()
 
 
-def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000, not_project=False):
-    #
-    # pc = np.loadtxt('carburator.txt')   # n x 3
-    # np.random.shuffle(pc)  # only shuffle the first axis
-    # pc = pc[0:10000, :]
-    # pc = PointCloud(pc)
-    # pc.add_noise(factor=5/100)
-    # pc.add_outlier(factor=5/100)
-    # for i in range(5000):
-    #     if i % 10 == 0:
-    #         print('saving number', i+1, 'th carburator point clouds')
-    #     pc.half_by_plane()
-    #     np.savetxt(base_path+'/carburator/carburator_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-    #
-    # pc = np.loadtxt('arm_monster.txt')   # n x 3
-    # np.random.shuffle(pc)  # only shuffle the first axis
-    # pc = pc[0:10000, :]
-    # pc = PointCloud(pc)
-    # pc.add_noise(factor=5/100)
-    # pc.add_outlier(factor=5 / 100)
-    # for i in range(5000):
-    #     if i % 10 == 0:
-    #         print('saving number', i+1, 'th arm_moster point clouds')
-    #     pc.half_by_plane()
-    #     np.savetxt(base_path+'/arm_monster/arm_monster_project'+str(i)+'.txt', pc.visible, delimiter=' ')
+def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000, not_project=False,
+                 show_result=False):
 
-    # pc = np.loadtxt('Dragon_Fusion_bronze_statue.txt')   # n x 3
 
     plydata = PlyData.read(pc_path)
     vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
@@ -266,7 +244,13 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
                 except ValueError:
                     pc.half_by_plane(grid_resolution=(300, 300))
                     np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-
+    if show_result:
+        dir_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.isdir(i)]
+        fig = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+        for i in dir_list:
+            color =np.random.random((1, 3))
+            pc = np.loadtxt(i+'/lab_project1')
+            mlab.points3d(pc[:,0],pc[:,1],pc[:,2],pc[:,2]*10**-9, color=color, figure=fig)
 
 def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
     """
@@ -422,11 +406,11 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     for i in range(batchsize):
         pc = np.squeeze(point_cloud[i])
         pc = PointCloud(pc)
-        pc.generate_r_neighbor(rate=0.05)
+        pc.generate_r_neighbor(range_rate=0.05)
         idx1 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(rate=0.1)
+        pc.generate_r_neighbor(range_rate=0.1)
         idx2 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(rate=0.2)
+        pc.generate_r_neighbor(range_rate=0.2)
         idx3 = pc.point_rneighbors  # n x ?
         current = (idx1.shape[1], idx2.shape[1], idx3.shape[1])
 
@@ -457,11 +441,11 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     for i in range(batchsize):
         pc = np.squeeze(point_cloud[i])
         pc = PointCloud(pc)
-        pc.generate_r_neighbor(rate=0.05)
+        pc.generate_r_neighbor(range_rate=0.05)
         idx1 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(rate=0.1)
+        pc.generate_r_neighbor(range_rate=0.1)
         idx2 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(rate=0.2)
+        pc.generate_r_neighbor(range_rate=0.2)
 
         for j, k in enumerate(idx1):
             np_arr1[i][j][0:len(k)] = k
@@ -601,9 +585,66 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
     return np.float32(cov)
 
 
+def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result = False):
+    """
+    default number of points of each point cloud is 2048
+    :param pc_path:
+    :param save_path:
+    :param max_nb_pc:
+    :return:
+    """
+
+    f_list = [pc_path+'/'+i for i in os.listdir(pc_path) if os.path.splitext(i)[1] == '.ply']
+    nb_classes = len(f_list)
+    scene_dataset = np.zeros((samples, max_nb_pc*2048, 3))
+    scene_label = np.zeros((samples, max_nb_pc*2048), dtype=np.int32)
+
+    for i in range(samples):
+        print('generating the {}th scene sample'.format(i))
+        nb_pc = np.random.choice(max_nb_pc) + 1
+        nb_pc = max_nb_pc
+
+        for j in range(nb_pc):
+            k = np.random.choice(nb_classes)
+            ran_object = f_list[k]
+            pc = PointCloud(ran_object)
+            pc.down_sample()
+            pc.transform()
+            pc.half_by_plane(n=2048, grid_resolution=(512, 512))
+            scene_dataset[i, j*2048:j*2048+2048, :] = pc.visible
+            scene_label[i, j*2048:j*2048+2048] = k
+
+    if show_result:
+        for i in range(1):
+            scene_pc = scene_dataset[i, :, :]
+            scene_pc = PointCloud(scene_pc)  #
+            scene_lb = scene_label[i, :]
+
+            figure = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+            colors = (np.random.random((nb_classes, 4))*255).astype(np.int8)
+            colors[:, -1] = 255
+            colors = colors[scene_lb, :]
+
+            scalars = np.arange(np.shape(colors)[0])
+
+            pts = mlab.quiver3d(scene_pc.position[:, 0], scene_pc.position[:, 1], scene_pc.position[:, 2],
+                                scene_pc.position[:, 0]*10**-9 +1, scene_pc.position[:, 0]*10**-9 +1,
+                                scene_pc.position[:, 0] * 10 ** -9 + 1, scalars=scalars,
+                                scale_factor=1, mode='sphere', figure=figure)
+            pts.glyph.color_mode = 'color_by_scalar'
+            pts.module_manager.scalar_lut_manager.lut.table = colors
+            mlab.show()
+
+    hdf5_file = h5py.File(save_path, mode='a')
+    hdf5_file.create_dataset('train_set', (samples, max_nb_pc*2048, 3), np.float32)  # be careful about the dtype
+    hdf5_file.create_dataset('train_labels', (samples, max_nb_pc*2048), np.uint8)
+    hdf5_file["train_set"][...] = scene_dataset
+    hdf5_file["train_labels"][...] = scene_label
+    hdf5_file.close()
+
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/randomsample_data.h5',
-              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)', n=5000)
+    # save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
+    #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=50)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -623,13 +664,17 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    # for i in range(1, 5):
-    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/lab'+str(i),
-    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/not_projected(random sample)/lab'+str(i)+'/final.ply',
-    #                  add_noise=None, add_outlier=None, n=5000, not_project=True)
+    # for i in range(1, 9):
+    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
+    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
+    #                  add_noise=0.04, add_outlier=0.04, n=50, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
     # pc = PointCloud(pc)
     # pc.show()
 
+    scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
+                      save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation.h5',
+                      samples=100, max_nb_pc=10,
+                      show_result=True)
