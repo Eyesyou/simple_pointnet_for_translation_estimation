@@ -354,7 +354,7 @@ def apply_homo_to_pc(pc_batch_input, homo):
     return batch_out
 
 
-def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20, intra_dist= 1/30, inter_dist=1/20):
+def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=None, intra_dist= 1/100, inter_dist=1/100):
     """
     compute key points of arr1, keep in mind the arr1 are salient points from point clouds
     :param arr1:
@@ -372,29 +372,38 @@ def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=20, intra_dist= 1/3
 
     tree = spatial.cKDTree(arr1)
     clusters = []
-    for i in range(nb_pts * 10):
-        idx = np.random.choice(n)
-        pts = arr1[idx, :]
+
+    for i in np.random.permutation(n):
+        pts = arr1[i, :]
         cluster = tree.query_ball_point(pts, intra_cluster_dist)
-        cluster = list(filter(lambda a: a != idx, cluster))
-        if len(cluster) > 4:  # minimum number of points in a cluster
+        cluster = list(filter(lambda a: a != i, cluster))
+        if len(cluster) >= 2:  # minimum number of points in a cluster
             clusters.append(cluster)
 
-    clusters.sort(key=len)
+    clusters.sort(key=len, reverse=True)
+    clusters = [sorted(x) for x in clusters]
+    b_set = set(tuple(x) for x in clusters)
+    clusters = [list(x) for x in b_set]
+
     assert clusters
 
     centers = np.mean(arr1[clusters[0], :], axis=0, keepdims=True)
-    tree = spatial.cKDTree(centers)
 
+    tree = spatial.cKDTree(centers)
+    # print('before reject points by inter cluster distance, the number of points is:', len(clusters))
+    # rejection based on inter_distance
     for i in range(len(clusters) - 1):
-        center = np.mean(arr1[clusters[i + 1], :], axis=0)
-        if not tree.query_ball_point(center, inter_cluster_dist):
-            center = center[np.newaxis, :]
-            centers = np.concatenate([centers, center], axis=0)
-            tree = spatial.cKDTree(centers)  # update the tree
-        else:
-            # print('reject one point')
+        center = np.mean(arr1[clusters[i + 1], :], axis=0, keepdims=False)
+
+        if tree.query_ball_point(center, inter_cluster_dist):
+            # query = tree.query_ball_point(center, inter_cluster_dist)
+            # print('inter_cluster_dist:', inter_cluster_dist,
+            #       'this point:', center, 'queryed point:', centers[query,:])
             pass
+        else:
+            centers = np.concatenate([centers, center[np.newaxis, :]], axis=0)
+            tree = spatial.cKDTree(centers)  # update the tree
+    # print('after reject points by inter cluster distance, the number of points is:', np.shape(centers))
     assert np.shape(centers)[0] > nb_pts
     centers = centers[:nb_pts, :]
 
@@ -567,7 +576,7 @@ class PointCloud:
                 assert medium.shape[0] >= n  # sampled points have to be bigger than n
             except AssertionError:
                 print('sampled points number is:', medium.shape[0])
-                raise ValueError('value error')
+                raise ValueError('value error, increase grid number')
             np.random.shuffle(medium)  # only shuffle the first axis
             self.visible = medium[0:n, :]
         else:
@@ -1023,23 +1032,22 @@ class PointCloud:
         number_x = math.ceil((distance_max[0] - distance_min[0]) / Voxel_Size)
         number_y = math.ceil((distance_max[1] - distance_min[1]) / Voxel_Size)
         # 用点云减去最小坐标再除以体素尺寸，得到的nx3为xyz方向上以体素尺寸为单位长度的坐标(浮点数)
-        sequence_number = (self.position - distance_min) / Voxel_Size
-        for i in range(len(sequence_number)):  # 对每个点
-            sequence = (math.ceil(sequence_number[i][2]) - 1) * number_x * number_y + (
-                        math.ceil(sequence_number[i][1]) - 1) * \
-                       number_x + math.ceil(sequence_number[i][0])  # 计算这个点在体素空间中的位置
-            if str(sequence) in ranking_set:
-                if Importance_Ranking[i] > ranking_set[str(sequence)][0]:
-                    ranking_set[str(sequence)] = [Importance_Ranking[i], i]
+        float_index = (self.position - distance_min) / Voxel_Size
+        for i in range(len(float_index)):  # 对每个点
+            sequence = str(math.ceil(float_index[i][0]))+str(math.ceil(float_index[i][1]))+\
+                       str(math.ceil(float_index[i][2]))  # 计算这个点在体素空间中的位置
+            if sequence in ranking_set:
+                if Importance_Ranking[i] > ranking_set[sequence][0]:
+                    ranking_set[sequence] = [Importance_Ranking[i], i]
             else:
-                ranking_set[str(sequence)] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
+                ranking_set[sequence] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
         if len(ranking_set) < Sampled_Number:
             print("The value of Voxel_Size is too large and needs to be reduced!!!")
             raise ValueError
         sample_sequence = np.zeros(shape=[len(ranking_set), 2])
         for i, j in enumerate(ranking_set):
             sample_sequence[i, :] = ranking_set[j]  # 字典里面每个键都是一个列表，保存的是一个体素内所有点的重要度，取最大的生成一个列表
-        sample_sequence = sample_sequence[sample_sequence[:, 0].argsort()]  # 排序，得到重要度从大到小的排序
+        sample_sequence = sample_sequence[(-1*sample_sequence[:, 0]).argsort()]  # decsendence sort，得到重要度从大到小的排序
         ind = np.empty((Sampled_Number,))
         for k in range(Sampled_Number):
             sampled_pointcloud[k, :] = self.position[int(sample_sequence[k, 1]), :]
@@ -1053,6 +1061,8 @@ class PointCloud:
         :param percentage:  ratio of key points to be detected
         :param show_result:
         :param rate: range ratio to search covariance
+        :param use_deficiency: whether use deficiency for saliency computation
+        :param usr_resolution_control:   whether use resolution_control for key points computation
         :param show_saliency： show the heat map of saliency of a point cloud
         :return:  return nothing, store the key points in self.keypoints
         """
@@ -1067,11 +1077,12 @@ class PointCloud:
         smallest_eigvals = eig_vals[:, 0]  # n x 1
         if use_deficiency:
             smallest_eigvals = smallest_eigvals/self.deficiency
+
         self.saliency = smallest_eigvals
         if usr_resolution_control:
-            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/70, Sampled_Number=nb_key_pts)
+            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/100, Sampled_Number=nb_key_pts)
         else:
-            key_pts_idx = np.argpartition(smallest_eigvals,  nb_key_pts, axis=0)[0:nb_key_pts]
+            key_pts_idx = np.argpartition((-1*smallest_eigvals),  nb_key_pts, axis=0)[0:nb_key_pts]  # sort descending
 
         self.keypoints = key_pts_idx
 
@@ -1146,16 +1157,17 @@ class PointCloud:
                               scale_factor=0.8, figure=fig, line_width=2, resolution=64)
             mlab.show()
 
-    def region_growing(self, show_result=False):
+    def region_growing(self, show_result=False, range_rate=0.05, percentage=0.1, inter_dist=1/100, intra_dist=1/20):
         """
 
         :param show_result:
         :return:
         """
-        self.compute_key_points(percentage=0.2)
-        centers = region_growing_cluster_keypts(self.position[self.keypoints, :], nb_pts=self.nb_points//100,
-                                                pts_range=self.range)
-        print(' region growing key points is :', centers)
+        self.compute_key_points(rate=range_rate, percentage=percentage*4)
+        centers = region_growing_cluster_keypts(self.position[self.keypoints, :], nb_pts=int(self.nb_points*percentage),
+                                                pts_range=self.range, inter_dist=inter_dist, intra_dist=intra_dist)
+
+        # print(' region growing key points is :', centers)
         if show_result:
             fig = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
             # origin points
@@ -1169,7 +1181,7 @@ class PointCloud:
                           color=(1, 1, 0),
                           scale_factor=2, figure=fig)  # color can be tuple(np.random.random((3,)).tolist())
             # clusters sphere
-            r = self.range/20
+            r = self.range*inter_dist
 
             mlab.points3d(centers[:, 0], centers[:, 1], centers[:, 2],
                           centers[:, 0] * 10 ** -9 + r * 2, color=(0, 0, 1), scale_factor=1,
@@ -1181,7 +1193,7 @@ class PointCloud:
                           centers[:, 0] * 10 ** -9 + self.range * 0.005,
                           color=(1, 0, 0), scale_factor=3)
             mlab.show()
-
+        return centers
 
 
 def point2plane_dist(point, plane):
@@ -1417,25 +1429,39 @@ def hausdorff_dist(arr1, arr2, chose_rate=1):
     return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
 
 
-def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_rate=0.05):
+def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_rate=0.05, region_growing=False):
 
     f_list = [pc_path + '/' + i for j, i in enumerate(os.listdir(pc_path)) if os.path.splitext(i)[1] == '.txt' and j<samples]
-    distance_array=[]
+    distance_array = []
     for i in f_list:
         pc1 = PointCloud(i)
         pc1.compute_key_points(percentage=percentage, rate=range_rate)
+
         for j in f_list:
             if j != i:
                 pc2 = PointCloud(j)
-                pc2.compute_key_points(percentage=percentage, rate=range_rate)
-                if chamfer:
-                    distance_array.append(
-                        chamfer_dist(pc1.position[pc1.keypoints,:], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                if region_growing:
+                    if chamfer:
+                        distance_array.append(
+                            chamfer_dist(pc1.region_growing(range_rate=range_rate, percentage=percentage),
+                                         pc2.region_growing(range_rate=range_rate, percentage=percentage),
+                                         chose_rate=0.5))
+                    else:
+                        distance_array.append(
+                            hausdorff_dist(pc1.region_growing(range_rate=range_rate, percentage=percentage),
+                                           pc2.region_growing(range_rate=range_rate, percentage=percentage),
+                                           chose_rate=0.5))
                 else:
-                    distance_array.append(
-                        hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                    pc2.compute_key_points(percentage=percentage, rate=range_rate)
+                    if chamfer:
+                        distance_array.append(
+                            chamfer_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                    else:
+                        distance_array.append(
+                            hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
     mean = np.mean(distance_array)
     print('mean is ', mean, 'distance array is ', distance_array)
+
 
 if __name__ == "__main__":
     # show_projection(pc_path='fullbodyanya1.txt', show_origin=True)
@@ -1468,7 +1494,8 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
-    robust_test_kpts(pc_path=base_path)
+    robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.025, region_growing=False, chamfer=False)
+
     # f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
     # print(f_list)
     # for j, i in enumerate(f_list):
@@ -1477,16 +1504,7 @@ if __name__ == "__main__":
     #     pc.down_sample(number_of_downsample=4096)
     #     pc.compute_key_points(use_deficiency=True, show_saliency=True)
     #     pc.compute_key_points(show_saliency=True)
-    # pc_path1 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab1/final.ply'
-    # pc_path2 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab2/final.ply'
-    # pc_path3 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab3/final.ply'
-    # pc_path4 = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/lab4/final.ply'
-    # pc1 = PointCloud(pc_path1)
-    # pc2 = PointCloud(pc_path2)
-    # pc3 = PointCloud(pc_path3)
-    # pc4 = PointCloud(pc_path4)
-    # pc4 = PointCloud(pc4.position*2)
-    #
+
     # pc1.down_sample(number_of_downsample=4096)
     # pc2.down_sample(number_of_downsample=4096)
     # pc3.down_sample(number_of_downsample=4096)
@@ -1497,21 +1515,13 @@ if __name__ == "__main__":
     # pc3.kd_tree(show_result=True, colors=colors)
     # pc4.kd_tree(show_result=True, colors=colors)
 
-
     # pc.estimate_normals(max_nn=10, show_result=True)
     # pc.down_sample(number_of_downsample=1024)
     # pc.estimate_normals(max_nn=10, show_result=True)
     # pc2 = PointCloud(pc_path2)
-    # pc3 = PointCloud(pc_path3)
-    # pc4 = PointCloud(pc_path4)
-    # pc1.down_sample()
-    # pc2.down_sample()
-    # pc3.down_sample()
+
     # pc4.down_sample()
-    #
-    # pc1.octree(show_layers=1, colors=colors)
-    # pc2.octree(show_layers=1, colors=colors)
-    # pc3.octree(show_layers=1, colors=colors)
+
     # pc4.octree(show_layers=1, colors=colors)
 
     # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier'

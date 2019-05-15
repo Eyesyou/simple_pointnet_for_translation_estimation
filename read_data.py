@@ -231,7 +231,7 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
             temp.down_sample(number_of_downsample=1024)
             np.savetxt(base_path + '/random_sample' + str(i) + '.txt', temp.position, delimiter=' ')
     else:
-        for i in range(n):
+        for i in range(50, n):
             if i % 10 == 0:
                 print('saving number', i+1, 'th lab_project point clouds')
             try:
@@ -250,7 +250,7 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
         for i in dir_list:
             color =np.random.random((1, 3))
             pc = np.loadtxt(i+'/lab_project1')
-            mlab.points3d(pc[:,0],pc[:,1],pc[:,2],pc[:,2]*10**-9, color=color, figure=fig)
+            mlab.points3d(pc[:, 0], pc[:, 1], pc[:, 2], pc[:, 2]*10**-9, color=color, figure=fig)
 
 def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
     """
@@ -610,7 +610,10 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
             pc = PointCloud(ran_object)
             pc.down_sample()
             pc.transform()
-            pc.half_by_plane(n=2048, grid_resolution=(512, 512))
+            try:
+                pc.half_by_plane(n=2048, grid_resolution=(512, 512))
+            except:
+                pc.half_by_plane(n=2048, grid_resolution=(512, 512))
             scene_dataset[i, j*2048:j*2048+2048, :] = pc.visible
             scene_label[i, j*2048:j*2048+2048] = k
 
@@ -642,6 +645,7 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
     hdf5_file["train_labels"][...] = scene_label
     hdf5_file.close()
 
+
 if __name__ == "__main__":
     # save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
     #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=50)
@@ -664,17 +668,17 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    # for i in range(1, 9):
-    #     augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
-    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
-    #                  add_noise=0.04, add_outlier=0.04, n=50, not_project=False)
+    for i in range(1, 9):
+        augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
+                     pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
+                     add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
     # pc = PointCloud(pc)
     # pc.show()
 
-    scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
-                      save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation.h5',
-                      samples=1, max_nb_pc=10,
-                      show_result=True)
+    # scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
+    #                   save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation2.h5',
+    #                   samples=100, max_nb_pc=10,
+    #                   show_result=True)
