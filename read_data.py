@@ -231,7 +231,7 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
             temp.down_sample(number_of_downsample=1024)
             np.savetxt(base_path + '/random_sample' + str(i) + '.txt', temp.position, delimiter=' ')
     else:
-        for i in range(50, n):
+        for i in range(50, 2388):
             if i % 10 == 0:
                 print('saving number', i+1, 'th lab_project point clouds')
             try:
@@ -668,7 +668,7 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    for i in range(1, 9):
+    for i in range(5, 9):
         augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
                      pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
                      add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)

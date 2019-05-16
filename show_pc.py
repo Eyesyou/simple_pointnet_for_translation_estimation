@@ -1429,7 +1429,7 @@ def hausdorff_dist(arr1, arr2, chose_rate=1):
     return max([compute_dist(arr1, arr2), compute_dist(arr2, arr1)])
 
 
-def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_rate=0.05, region_growing=False):
+def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_rate=0.05, region_growing=False, chose_rate=0.5):
 
     f_list = [pc_path + '/' + i for j, i in enumerate(os.listdir(pc_path)) if os.path.splitext(i)[1] == '.txt' and j<samples]
     distance_array = []
@@ -1445,20 +1445,20 @@ def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_ra
                         distance_array.append(
                             chamfer_dist(pc1.region_growing(range_rate=range_rate, percentage=percentage),
                                          pc2.region_growing(range_rate=range_rate, percentage=percentage),
-                                         chose_rate=0.5))
+                                         chose_rate=chose_rate))
                     else:
                         distance_array.append(
                             hausdorff_dist(pc1.region_growing(range_rate=range_rate, percentage=percentage),
                                            pc2.region_growing(range_rate=range_rate, percentage=percentage),
-                                           chose_rate=0.5))
+                                           chose_rate=chose_rate))
                 else:
                     pc2.compute_key_points(percentage=percentage, rate=range_rate)
                     if chamfer:
                         distance_array.append(
-                            chamfer_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                            chamfer_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=chose_rate))
                     else:
                         distance_array.append(
-                            hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=0.5))
+                            hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=chose_rate))
     mean = np.mean(distance_array)
     print('mean is ', mean, 'distance array is ', distance_array)
 
@@ -1494,7 +1494,7 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
-    robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.025, region_growing=False, chamfer=False)
+    robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.05, region_growing=True, chamfer=False, chose_rate=0.7)
 
     # f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
     # print(f_list)
