@@ -10,6 +10,7 @@ from scipy import spatial
 from show_pc import PointCloud
 from open3d import *
 import matplotlib.pyplot as plt
+
 class OctNode:
     def __init__(self, coordinates, size, data=None):
         assert isinstance(coordinates, np.ndarray)
@@ -475,13 +476,11 @@ if __name__ == "__main__":
     # print(np.asarray(downpcd.normals))
     # print("")
 
-    N = 200
-    ones = np.ones(N)
-    scalars=np.arange(N)
-    colors = np.random.random((N,3))
-    x ,y ,z = colors[:,0], colors[:,1], colors[:, 2]
-    pts = mlab.quiver3d(x, y, z, ones, ones, ones, scalars=scalars, mode='sphere')
-    pts.glyph.color_mode='color_by_scalar'
-    pts.module_manager.scalar_lut_manager.lut.table = colors
-    mlab.show()
 
+    print(b)
+    # print(list(set(points)))
+
+
+    # tree = spatial.KDTree(points)
+    # result = tree.query_ball_point([0, 0, 0], 0.4)
+    # print('result:', points[result])

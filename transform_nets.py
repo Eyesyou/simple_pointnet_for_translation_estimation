@@ -5,7 +5,7 @@ import os
 import tf_util
 
 
-def compute_pos_distance(batch_pos1,batch_pos2):
+def compute_pos_distance(batch_pos1, batch_pos2):
     """
 
     :param batch_pos1:

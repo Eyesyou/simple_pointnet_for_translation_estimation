@@ -406,8 +406,6 @@ def region_growing_cluster_keypts(arr1, nb_pts=10, pts_range=None, intra_dist= 1
     # print('after reject points by inter cluster distance, the number of points is:', np.shape(centers))
     assert np.shape(centers)[0] > nb_pts
     centers = centers[:nb_pts, :]
-
-
     return centers
 
 
@@ -893,7 +891,7 @@ class PointCloud:
 
         if show_result:
             if self.keypoints is not None:
-
+                print('key points already exist, plot them now')
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
 
                 neighbor_idx = self.point_rneighbors[self.keypoints, :]
@@ -919,15 +917,16 @@ class PointCloud:
                 mlab.points3d(self.position[self.keypoints, 0], self.position[self.keypoints, 1],
                               self.position[self.keypoints, 2],
                               self.position[self.keypoints, 0] * 10 ** -9 + self.range * 0.005,
-                              color=(1, 0, 0), scale_factor=2,)
-
+                              color=(1, 0, 0), scale_factor=2)
                 mlab.show()
 
             else:
-                for i in range(5):
-                    j = np.random.choice(self.nb_points, 1)  # choose one random point index to plot
-                    fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+                fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+                self.compute_key_points(percentage=0.01, resolution_control=1/7, rate=range_rate, use_deficiency=True) # get the key points id
 
+                for i in range(15):
+                    # j = np.random.choice(self.nb_points, 1)  # choose one random point index to plot
+                    j = self.keypoints[i]
                     neighbor_idx = self.point_rneighbors[j, :]
                     neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
                     # show the neighbor point cloud
@@ -935,18 +934,24 @@ class PointCloud:
                                   self.position[neighbor_idx, 2],
                                   self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
                                   color=tuple(np.random.random((3,)).tolist()),
-                                  scale_factor=2, figure=fig2)  # tuple(np.random.random((3,)).tolist())
+                                  scale_factor=3, figure=fig2, resolution=16)  # tuple(np.random.random((3,)).tolist())
 
                     # show the whole point cloud
                     mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                                   self.position[:, 2] * 10**-9 + self.range * 0.005,
-                                  color=(0, 1, 0), scale_factor=1)
+                                  color=(0, 1, 0), scale_factor=1.5, resolution=16, figure=fig2)
+
+                    # show the key point
+                    mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                                  self.position[j, 0] * 10 ** -9 + self.range * 0.005, color=(1, 0, 0), scale_factor=6,
+                                  figure=fig2, resolution=256)
 
                     # show the sphere on the neighbor
                     mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
                                   self.position[j, 0]*10**-9+r*2, color=(0, 0, 1), scale_factor=1,
-                                  transparent=True, opacity=0.3)
-                    mlab.show()
+                                  transparent=True, opacity=0.0, resolution=16, figure=fig2)
+                return fig2
+                # mlab.show()
 
     def down_sample(self, number_of_downsample=10000):
         if number_of_downsample>self.nb_points:
@@ -983,10 +988,7 @@ class PointCloud:
 
         if neighbor_pts == 'point_rneighbors':
             print('using ball query to find key points')
-            if use_dificiency:
-                self.generate_r_neighbor(range_rate=rate, use_dificiency=True)
-            else:
-                self.generate_r_neighbor(range_rate=rate)
+            self.generate_r_neighbor(range_rate=rate, use_dificiency=use_dificiency)
 
             whole_weight = 1 / (~np.isnan(self.point_rneighbors)).sum(1)  # do as ISS paper said
             whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
@@ -1026,11 +1028,8 @@ class PointCloud:
         sampled_pointcloud = np.zeros((Sampled_Number, 3))  # 初始化输出点云数组
 
         # 计算点云在空间中的立方体
-        distance_max = np.amax(self.position, axis=0)
         distance_min = np.amin(self.position, axis=0)
-        # 计算立方体x,y方向的体素个数
-        number_x = math.ceil((distance_max[0] - distance_min[0]) / Voxel_Size)
-        number_y = math.ceil((distance_max[1] - distance_min[1]) / Voxel_Size)
+
         # 用点云减去最小坐标再除以体素尺寸，得到的nx3为xyz方向上以体素尺寸为单位长度的坐标(浮点数)
         float_index = (self.position - distance_min) / Voxel_Size
         for i in range(len(float_index)):  # 对每个点
@@ -1039,6 +1038,8 @@ class PointCloud:
             if sequence in ranking_set:
                 if Importance_Ranking[i] > ranking_set[sequence][0]:
                     ranking_set[sequence] = [Importance_Ranking[i], i]
+                 #   print('updates points')
+               # print('rejecting points')
             else:
                 ranking_set[sequence] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
         if len(ranking_set) < Sampled_Number:
@@ -1049,12 +1050,13 @@ class PointCloud:
             sample_sequence[i, :] = ranking_set[j]  # 字典里面每个键都是一个列表，保存的是一个体素内所有点的重要度，取最大的生成一个列表
         sample_sequence = sample_sequence[(-1*sample_sequence[:, 0]).argsort()]  # decsendence sort，得到重要度从大到小的排序
         ind = np.empty((Sampled_Number,))
+
         for k in range(Sampled_Number):
             sampled_pointcloud[k, :] = self.position[int(sample_sequence[k, 1]), :]
             ind[k] = sample_sequence[k, 1]
         return sampled_pointcloud, ind.astype(int)
 
-    def compute_key_points(self, percentage=0.1, show_result=False, usr_resolution_control=True, rate=0.05,
+    def compute_key_points(self, percentage=0.1, show_result=False, resolution_control=0.02, rate=0.05,
                            use_deficiency=False, show_saliency=False):
         """
         Intrinsic shape signature key point detection, salient point detection
@@ -1077,10 +1079,11 @@ class PointCloud:
         smallest_eigvals = eig_vals[:, 0]  # n x 1
         if use_deficiency:
             smallest_eigvals = smallest_eigvals/self.deficiency
-
+        smallest_eigvals[np.isinf(smallest_eigvals)] = 1
+        smallest_eigvals = np.real(smallest_eigvals)
         self.saliency = smallest_eigvals
-        if usr_resolution_control:
-            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range/100, Sampled_Number=nb_key_pts)
+        if resolution_control:
+            _, key_pts_idx = self.resolution_kpts(smallest_eigvals, Voxel_Size=self.range*resolution_control, Sampled_Number=nb_key_pts)
         else:
             key_pts_idx = np.argpartition((-1*smallest_eigvals),  nb_key_pts, axis=0)[0:nb_key_pts]  # sort descending
 
@@ -1105,13 +1108,14 @@ class PointCloud:
         if show_saliency:
             fig3 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
             points = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                          smallest_eigvals, scale_mode='none', scale_factor=1,
+                          smallest_eigvals, scale_mode='none', scale_factor=2,
                           colormap='blue-red', figure=fig3)
             cb = mlab.colorbar(object=points, title='saliency')  # legend for the saliency
             # sb = mlab.scalarbar(object=points, title='saliensy')
             cb.label_text_property.bold = 1
             cb.label_text_property.color = (0, 0, 0)
-            mlab.show()
+            #mlab.show()
+            return fig3
 
     def estimate_normals(self, max_nn=20, show_result=False):
         o3dpc = o3d.PointCloud()
@@ -1464,7 +1468,6 @@ def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_ra
 
 
 if __name__ == "__main__":
-    # show_projection(pc_path='fullbodyanya1.txt', show_origin=True)
     # org = cv2.imread('/home/sjtu/Pictures/asy/point clouds/1th_image_30th_epoch.png')
     # now = cv2.cvtColor(org, cv2.COLOR_BGR2GRAY)
     # cv2.imshow('aaa', now)
@@ -1472,15 +1475,11 @@ if __name__ == "__main__":
     # cv2.waitKey(0)  # Waits forever for user to press any key
     # cv2.destroyAllWindows()  # Closes displayed windows
     # a = time.time()
-    #
     # pc = PointCloud(np.random.random(size=(1024, 3)))
     # readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/train_set4noiseout/project_data.h5')  # file path
     # pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
     # pc = np.squeeze(pc_tile[5001, :, :])
-    # # pc = np.loadtxt('model.txt')
-    # pc = PointCloud(pc)
-    # print('limit:', max(pc.max_limit-pc.min_limit))
-    #
+
     # pc.octree()
     # print(pc.root)
     # mlab.figure(size=(1000, 1000))
@@ -1493,34 +1492,21 @@ if __name__ == "__main__":
     #                           color=tuple(np.random.random((3,)).tolist()), scale_factor=0.05)   # tuple(np.random.random((3,)).tolist())
     # print(time.time() - a, 's')
     # mlab.show()
-    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
-    robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.05, region_growing=True, chamfer=False, chose_rate=0.7)
+    #base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
+ #   robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.05, region_growing=True, chamfer=False, chose_rate=0.7)
 
-    # f_list = [base_path+'/'+i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
-    # print(f_list)
-    # for j, i in enumerate(f_list):
-    #     print(' point cloud is', i)
-    #     pc = PointCloud(i)
-    #     pc.down_sample(number_of_downsample=4096)
-    #     pc.compute_key_points(use_deficiency=True, show_saliency=True)
-    #     pc.compute_key_points(show_saliency=True)
+
+    #    pc.compute_key_points(use_deficiency=True, show_saliency=True)
+    #    pc.compute_key_points(show_saliency=True)
 
     # pc1.down_sample(number_of_downsample=4096)
-    # pc2.down_sample(number_of_downsample=4096)
-    # pc3.down_sample(number_of_downsample=4096)
-    # pc4.down_sample(number_of_downsample=4096)
     # colors = np.random.random((100, 3))
     # pc1.kd_tree(show_result=True, colors=colors)
-    # pc2.kd_tree(show_result=True, colors=colors)
-    # pc3.kd_tree(show_result=True, colors=colors)
-    # pc4.kd_tree(show_result=True, colors=colors)
 
     # pc.estimate_normals(max_nn=10, show_result=True)
     # pc.down_sample(number_of_downsample=1024)
     # pc.estimate_normals(max_nn=10, show_result=True)
     # pc2 = PointCloud(pc_path2)
-
-    # pc4.down_sample()
 
     # pc4.octree(show_layers=1, colors=colors)
 
@@ -1528,9 +1514,9 @@ if __name__ == "__main__":
     # pc_path1 = base_path + '/lab4/final.ply'
     # pc = PointCloud(base_path + '/lab4/final.ply')
     # pc.down_sample(2048)
-    # pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=False)
-    # pc.compute_key_points(rate=0.1, show_result=True, usr_resolution_control=True)
-    # # c.generate_r_neighbor(range_rate=0.15, show_result=True)
+    # pc.compute_key_points(rate=0.1, show_result=True, resolution_control=0)
+    # pc.compute_key_points(rate=0.1, show_result=True, resolution_control=0.02)
+    #
 
     # show_projection(pc_path=pc_path1, nb_sample=10000, show_origin=False, add_noise=False)
     # pc = PointCloud(pc_path1)
@@ -1540,9 +1526,9 @@ if __name__ == "__main__":
     # pc.compute_key_points(show_saliency=True, rate=0.05)
     # pc.compute_key_points(show_saliency=True, rate=0.1)
     # key_pts = region_growing_cluster_keypts(pc)
-    # # print('key_pts:', key_pts)
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection='3d')
     # mlab.points3d(key_pts[:, 0], key_pts[:, 1], key_pts[:, 2], key_pts[:, 2] * 10 ** -9 + 1, color=(1,0,0), scale_factor=3)
     # mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2], pc.position[:, 2] * 10 ** -9 + 1, color=(0, 1, 0), scale_factor=1)
     # mlab.show()
+    pass

@@ -62,8 +62,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                 # print('one pc cost total:{}second'.format(te-ts))
                 # print('----------------------------------------')
 
-    pc_label = np.concatenate(
-        [np.zeros(shape=(n,)), np.ones(shape=(n,)), 2 * np.ones(shape=(n,)), 3 * np.ones(shape=(n,))], axis=0)
+    pc_label = np.tile(np.arange(nb_types), (n, 1)).reshape((-1,), order='F')
 
     train_set_shape = (nb_types*n, 1024, 3)
     train_set_local_shape = (nb_types*n, 102, 9)
@@ -134,7 +133,7 @@ def test_data(h5_path='', rand_trans=False, showinone=False):
     h5file = read_data(h5_path)
     trainset = h5file['train_set'][...]
     train_local = h5file['train_set_local'][...]
-    print('train_local:',train_local,'train_local shape:', train_local.shape)
+    print('train_local:', train_local, 'train_local shape:', train_local.shape)
     if rand_trans:
         trainset += -300 + 600 * np.random.random(size=(20000, 1, 3))  # 20000 * 1024 * 3
 
@@ -231,7 +230,7 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
             temp.down_sample(number_of_downsample=1024)
             np.savetxt(base_path + '/random_sample' + str(i) + '.txt', temp.position, delimiter=' ')
     else:
-        for i in range(50, 2388):
+        for i in range(n):
             if i % 10 == 0:
                 print('saving number', i+1, 'th lab_project point clouds')
             try:
@@ -647,8 +646,8 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
 
 
 if __name__ == "__main__":
-    # save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
-    #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=50)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
+            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=5000, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -668,10 +667,10 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    for i in range(5, 9):
-        augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
-                     pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
-                     add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
+    #for i in range(5, 9):
+    #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
+    #                 pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
+    #                 add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
