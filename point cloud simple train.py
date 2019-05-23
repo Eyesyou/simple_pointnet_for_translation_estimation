@@ -14,6 +14,9 @@ from show_samples import plotit
 import show_pc
 from show_pc import PointCloud
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
+from plot4experiment import vis_first_layer , plot_embedding_3d
+from read_data import get_local_eig_np
+
 from mayavi import mlab
 LOG_FOUT = open('log_train.txt', 'w')
 
@@ -35,24 +38,21 @@ decay_rate = 0.999
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
 batchsize = 100
-max_epoch = 5  # 200
-nb_classes = 4
+max_epoch = 100  # 200
+nb_classes = 8
 nb_points = 1024
 key_pts_percentage = 0.1
 # tile_size = 256   # total
-# pc_tile = np.tile(pc, (tile_size, 1, 1))   # tile_size*4 x 1024 x 3
-# pc_label = np.tile(np.array([0, 1, 2, 3]), tile_size)
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/noise_out lier/normallized_project_data_with_re_ctrl.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/normalized_with_rectrl.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
-quaternion_range = [0, 0.2]
+quaternion_range = [0, 0.3]
 translation_range = [-5, 5]
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100   # for scale
-
 
 # <editor-fold desc="use this snipet to make">
 # for i in range(pc_tile.shape[0]):
@@ -67,8 +67,6 @@ pc_tile *= 100   # for scale
 # pc_tile += -5 + 10*np.random.random(size=(20000, 1, 3))  # 20000 * 1024 * 3
 
 pc_label = readh5['train_labels'][:]
-
-
 
 light = np.array([[1,  0,  0],
                  [0,  0,  1],
@@ -86,6 +84,7 @@ light3 = light[2, :].tolist()
 shade3 = shade[2, :].tolist()
 light4 = light[3, :].tolist()
 shade4 = shade[3, :].tolist()
+colorset = [shade1, light1, shade2, light2, shade3, light3, shade4, light4]
 
 print('initial learning rate :', init_learning_rate, '\n', 'decay_rate is :', decay_rate, '\n',
       'decay_step is: ', decay_step, 'max_epoch is:', max_epoch, '\n', 'batchsize is:', batchsize)
@@ -168,14 +167,6 @@ def get_local(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3))
     net = tf.layers.max_pooling2d(net, pool_size=(int(nb_points*key_pts_percentage), 1), strides=1)  # b x 1 x 1 x 256
     net = tf.reshape(net, [batchsize, -1])  # b x 256
     return net
-
-
-def get_local_feature(local_eigs):
-    """
-
-    :param local_eigs:
-    :return:
-    """
 
 
 def get_pts_nei(idx, batch, nb_points):
@@ -371,18 +362,21 @@ def train(model_name, use_local=False):
 
 
 @timeit
-def inference(model_path, show_result=False, use_local=False, times=1):
+def inference(model_path, show_result=False, use_local=False, times=1,
+              vis_feature=False, vis_tsne=False, test_batchsize=1):
     """
     After trainning , restore the saved pre-trained model, and test for inference.
     :param model_path:
     :param show_result:
     :param use_local:
     :param times:  how many times to test
+    :param vis_feature:
+    :param vis_tsne:
+    :param test_batchsize:
     :return:
     """
-
     tf.reset_default_graph()
-    test_batchsize = 100
+
     print('test_batchsize is :', test_batchsize)
     with tf.device('/gpu:0'):
         pointclouds_pl, labels_pl = placeholder_inputs(test_batchsize, nb_points)
@@ -427,26 +421,59 @@ def inference(model_path, show_result=False, use_local=False, times=1):
            'recovered_pc': end_points['test_layer2'],
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
+           'first_layer_output': end_points['first_layer_output'],
+           'classification_output': end_points['classification_output']
            }
+    classification_output4tsne = np.zeros((times, test_batchsize, 256))  # times x b x 256
+    tsne_label = np.zeros((times, test_batchsize))  # times x b
+    point_clouds = np.zeros((times, test_batchsize, nb_points, 3))  # times x b  x nb_points x 3
     for j in range(times):  # how many times you want to test
+
+        if vis_feature:
+            x = np.linspace(0, 1, 16)
+            y = np.linspace(0, 1, 16)
+            z = np.linspace(0, 1, 16)
+            xi, yi, zi = np.meshgrid(x, y, z)
+            points = np.concatenate([np.reshape(xi, [-1, 1]), np.reshape(yi, [-1, 1]), np.reshape(zi, [-1, 1])], axis=1)
+            np.random.shuffle(points)
+            points = points[np.newaxis, 0:1024, :]
+            # pc_tile = points   # once define pc_tile here, pc_tile becomes local variable
+            # pc_local_eigs = get_local_eig_np(points)   # once define pc_local_eigs here,pc_tile becomes local variable
+
         rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
-        feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],
+
+        tsne_label[j] = pc_label[rand_idx]  # (b, )
+        point_clouds[j] = pc_tile[rand_idx,:,:]  # (b x nb_points x 3)
+        feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
                      ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
                      ops['labels_pl']: pc_label[rand_idx],
                      ops['is_training_pl']: False}
 
         start = time.time()
-        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, summary] = sess.run([ops['pred'], ops['loss'], ops['random_pos'],
-                                                                                        ops['predict_pos'], ops['trans_dis'],
-                                                                                        ops['original_pc'], ops['recovered_pc'],
-                                                                                        ops['inference_summary_merged']],
-                                                                                        feed_dict=feed_dict)
+        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, summary, cls_out, first_ly] = \
+            sess.run([ops['pred'], ops['loss'], ops['random_pos'],
+                      ops['predict_pos'], ops['trans_dis'],
+                      ops['original_pc'], ops['recovered_pc'],
+                      ops['inference_summary_merged'],
+                      ops['classification_output'],
+                      ops['first_layer_output']],
+                      feed_dict=feed_dict)
+
+        classification_output4tsne[j] = cls_out  # b x 256
+
         tf.summary.scalar('total_loss', total_loss)
         inference_writer.add_summary(summary, j)
         end = time.time()
         print('inference time cost:{} s'.format(end-start))
         print('trans dis is :{}'.format(trans_dis))
         print('total loss is:{}'.format(total_loss))
+
+        pred_class = np.argmax(pred_class, 1)  # asy anotationed
+        #print('pred_label:', pred_val)  # asy anotationed
+        #print('truth_label:', current_label[start_idx:end_idx])  # asy anotationed
+        correct = np.sum(pred_class == pc_label[rand_idx])   # asy anotationed
+
+        print('predicted class is :{}, which {} are right'.format(pred_class, correct))
         print('***********')
         # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
         #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
@@ -471,10 +498,22 @@ def inference(model_path, show_result=False, use_local=False, times=1):
         ran_pos = np_quat_pos_2_homo(ran_pos)
         move_pc = apply_np_homo(opc, ran_pos)
 
-        show_pc.show_trans(move_pc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)  # simulate the ramdon
+        show_pc.show_trans(move_pc, rpc, colorset=colorset, scale=300)  # simulate the ramdon
 
-        show_pc.show_trans(opc, rpc, shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
+        show_pc.show_trans(opc, rpc, colorset=colorset, scale=300)
 
+    if vis_feature:
+        print('points and values:', points)
+        print('points and values:', first_ly)
+
+        np.save('first_ly.npy', first_ly)
+        # vis_first_layer(points, np.squeeze(first_ly, axis=0))
+
+    if vis_tsne:
+        classification_output4tsne = np.reshape(classification_output4tsne, (-1, 256))
+        tsne_label = np.reshape(tsne_label, (-1, ))
+        point_clouds = np.reshape(point_clouds, (-1, nb_points, 3))
+        plot_embedding_3d(classification_output4tsne, tsne_label, point_clouds=point_clouds)
 
 def get_bn_decay(batch):
     # ofr batch decay
@@ -583,11 +622,15 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     #net_transformed = tf.expand_dims(net_transformed, [2])  #Bx1024x1x64
 
+    #  classification network
     with tf.variable_scope('main_net') as sc:
         net = tf_util.conv2d(net_transformed, 64, [1, 1],
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
                          scope='conv3', bn_decay=bn_decay)      #Bx1024x1x64
+
+        end_points['first_layer_output'] = tf.reshape(net, shape=[batch_size, 1024, 64])  # B X 1024 X 64
+
         net = tf_util.conv2d(net, 128, [1, 1],
                          padding='VALID', stride=[1, 1],
                          bn=True, is_training=is_training,
@@ -627,6 +670,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         #                           scope='fc6', bn_decay=bn_decay)  #Bx256
         # net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
         #                   scope='dp2')
+        end_points['classification_output'] = tf.reshape(net, shape=[batch_size, -1])  #B X 256
         if use_local:
             # b x nb_key_pts x 9 x 1 , 9 because multi-scale
             point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)
@@ -746,7 +790,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
         #     # print('not show now')
         #
         #     show_pc.show_trans(layer1, layer2,      # origin transformed original dark, transformed light
-        #                        shade1, light1, shade2, light2, shade3, light3, shade4, light4, scale=300)
+        #                        colorset, scale=300)
 
         train_writer.add_summary(summary, step)
         pred_val = np.argmax(pred_val, 1)  # asy anotationed
@@ -985,7 +1029,7 @@ def compute_pos_distance(batch_pos1, batch_pos2):
     inv_homo_pos1 = tf.matrix_inverse(homo_pos1)  # B x 4 x 4
     inv_quat_pos1 = tf.concat(
         [tf.slice(batch_pos1, [0, 0], [batch, 1]), -1.0 * tf.slice(batch_pos1, [0, 1], [batch, 3]),
-         tf.squeeze(tf.slice(inv_homo_pos1, [0, 0, 3], [batch, 3, 1]))], axis=1)  # B x 7
+         tf.squeeze(tf.slice(inv_homo_pos1, [0, 0, 3], [batch, 3, 1]), axis=2)], axis=1)  # B x 7
 
     angle_dis = tf.minimum(tf.sqrt(tf.reduce_sum(tf.square(inv_quat_pos1[:, 0:4] - batch_pos2[:, 0:4]), axis=1)),
                            tf.sqrt(tf.reduce_sum(tf.square(inv_quat_pos1[:, 0:4] + batch_pos2[:, 0:4]),
@@ -1129,8 +1173,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="with_local_model28.ckpt", use_local=True)
+    # train(model_name="object8.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "with_local_model28.ckpt"), use_local=True, show_result=False, times=100)  # test time
-    #
+    # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=5, test_batchsize=5)  # test time
+    # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
+    inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

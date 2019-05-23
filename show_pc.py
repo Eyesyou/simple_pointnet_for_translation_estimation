@@ -125,13 +125,17 @@ def show_all(point_cloud, color=None, plot_plane=False, plot_arrow=True):
     # plt.show()
 
 
-def show_trans(point_cloud1, point_cloud2, color1=None, color2=None, color3=None, color4=None,
-               color5=None, color6=None, color7=None, color8=None, use_mayavi=True, scale=4):
+def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4):
     """
-    plot a batch of point clouds
+        plot a batch of point clouds
     :param point_cloud1: Bx1024x3 point_cloud2: Bx1024x3 np array
-    :return:
+    :param point_cloud2: Bx1024x3 point_cloud2: Bx1024x3 np array
+    :param colorset:   for point color
+    :param use_mayavi:
+    :param scale:
+    :return: nothing
     """
+
     a1, b1, c1 = point_cloud1[:, :, 0], point_cloud1[:, :, 1], point_cloud1[:, :, 2]  # Bxnx1
     a1, b1, c1 = np.squeeze(a1), np.squeeze(b1), np.squeeze(c1)  # Bxn
     a2, b2, c2 = point_cloud2[:, :, 0], point_cloud2[:, :, 1], point_cloud2[:, :, 2]  # Bxnx1
@@ -141,7 +145,7 @@ def show_trans(point_cloud1, point_cloud2, color1=None, color2=None, color3=None
     mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
     ax.set_axis_off()
     B = point_cloud1.shape[0] #batch
-    colorset = [color1, color2, color3, color4, color5, color6, color7, color8]
+
     dark_multiple = 2.5   # greater than 1
     for idx, i in enumerate(colorset):
         if idx % 2 == 0 and i is None:
@@ -591,7 +595,7 @@ class PointCloud:
     def show(self, not_show=False, scale=0.4):
         mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
         fig = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                            self.position[:, 2] * 10**-2 + 2, color=(0, 1, 0),  # +self.range * scale
+                            self.position[:, 2] * 10**-2 + 1, color=(0, 1, 0),  # +self.range * scale
                             scale_factor=scale)   # colormap='Spectral', color=(0, 1, 0)
 
         if not not_show:
@@ -616,7 +620,7 @@ class PointCloud:
         """
 
         inds = np.random.choice(np.arange(self.nb_points), size=int(factor * self.nb_points))
-        self.position[inds] = self.center + -self.range / 6 + self.range / 3 * np.random.random(size=(len(inds), 3))
+        self.position[inds] = self.center + -self.range / 2 + self.range / 1 * np.random.random(size=(len(inds), 3))
 
     def normalize(self):
         self.position -= self.center
