@@ -468,7 +468,10 @@ class PointCloud:
         self.saliency =None
         print(self.nb_points, ' points', 'range:', self.range)
 
-    def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256)):
+    def __add__(self, other):
+        return PointCloud(np.concatenate([self.position, other.position], axis=0))
+
+    def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256), show_result=False):
         """
         implement the grid plane projection method
         :param plane:  the plane you want to project the point cloud into, and generate the image-like grid,
@@ -591,6 +594,39 @@ class PointCloud:
         self.plane_project_points = np.concatenate([np.expand_dims(self.visible[:, 0], axis=1) - A * t_1,
                                                     np.expand_dims(self.visible[:, 1], axis=1) - B * t_1,
                                                     np.expand_dims(self.visible[:, 2], axis=1) - C * t_1], axis=1)
+
+        if show_result:
+            mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+            fig = mlab.points3d(self.visible[:, 0], self.visible[:, 1], self.visible[:, 2],
+                                self.visible[:, 2] * 10 ** -2 + 1, color=(0, 1, 0),  # +self.range * scale
+                                scale_factor=0.4)  # colormap='Spectral', color=(0, 1, 0)
+            mlab.show()
+
+    def cut_by_plane(self, plane=None, show_result=False):
+        if plane is None:
+            # generate a random plane whose distance to the center bigger than self.range
+            # d = abs(Ax+By+Cz+D)/sqrt(A**2+B**2+C**2)
+            plane_normal = -0.5 + np.random.random(size=[3, ])  # random A B C for plane Ax+By+Cz+D=0
+            A = plane_normal[0]
+            B = plane_normal[1]
+            C = plane_normal[2]
+            D = -(A * self.center[0] + B * self.center[1] + C * self.center[2])
+
+        else:
+            A = plane[0]
+            B = plane[1]
+            C = plane[2]
+            D = plane[3]
+
+        idx_direction = A*self.position[:, 0]+B*self.position[:, 1]+C*self.position[:, 2]+D  # nx1
+        self.visible = self.position[idx_direction > 0, :]
+
+        if show_result:
+            mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+            fig = mlab.points3d(self.visible[:, 0], self.visible[:, 1], self.visible[:, 2],
+                                self.visible[:, 2] * 10 ** -2 + 1, color=(0, 1, 0),  # +self.range * scale
+                                scale_factor=0.4)  # colormap='Spectral', color=(0, 1, 0)
+            mlab.show()
 
     def show(self, not_show=False, scale=0.4):
         mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
@@ -1535,4 +1571,12 @@ if __name__ == "__main__":
     # mlab.points3d(key_pts[:, 0], key_pts[:, 1], key_pts[:, 2], key_pts[:, 2] * 10 ** -9 + 1, color=(1,0,0), scale_factor=3)
     # mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2], pc.position[:, 2] * 10 ** -9 + 1, color=(0, 1, 0), scale_factor=1)
     # mlab.show()
+    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
+    for i in f_list:
+        pc = PointCloud(i)
+        pc.cut_by_plane()
+        pc2 = PointCloud(pc.visible)
+        pc2.half_by_plane(show_result=True)
+
     pass

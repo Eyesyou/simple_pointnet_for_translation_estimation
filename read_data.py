@@ -584,19 +584,23 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
     return np.float32(cov)
 
 
-def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result = False):
+def scene_seg_dataset(pc_path, save_path, samples=1000, max_nb_pc=5, show_result = False):
     """
-    default number of points of each point cloud is 2048
+    default number of points of each point cloud is 1024
     :param pc_path:
     :param save_path:
     :param max_nb_pc:
     :return:
     """
 
-    f_list = [pc_path+'/'+i for i in os.listdir(pc_path) if os.path.splitext(i)[1] == '.ply']
+    f_list = [PointCloud(pc_path+'/'+i) for i in os.listdir(pc_path) if os.path.splitext(i)[1] == '.ply']
+    for i in f_list:
+        i.down_sample()
+
     nb_classes = len(f_list)
-    scene_dataset = np.zeros((samples, max_nb_pc*2048, 3))
-    scene_label = np.zeros((samples, max_nb_pc*2048), dtype=np.int32)
+    scene_dataset = np.zeros((samples, max_nb_pc*1024, 3))
+    scene_label = np.zeros((samples, max_nb_pc*1024), dtype=np.int32)
+    rate_180, rate_240, rate_300, rate_360 = [0, 0, 0, 0]
 
     for i in range(samples):
         print('generating the {}th scene sample'.format(i))
@@ -605,17 +609,27 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
 
         for j in range(nb_pc):
             k = np.random.choice(nb_classes)
-            ran_object = f_list[k]
-            pc = PointCloud(ran_object)
-            pc.down_sample()
+            pc = f_list[k]
             pc.transform()
+            pc.cut_by_plane()
+            pc2 = PointCloud(pc.visible)
             try:
-                pc.half_by_plane(n=2048, grid_resolution=(512, 512))
+                pc2.half_by_plane(n=1024, grid_resolution=(190, 190))
+                rate_180 +=1
             except:
-                pc.half_by_plane(n=2048, grid_resolution=(512, 512))
-            scene_dataset[i, j*2048:j*2048+2048, :] = pc.visible
-            scene_label[i, j*2048:j*2048+2048] = k
-
+                try:
+                    pc2.half_by_plane(n=1024, grid_resolution=(260, 260))
+                    rate_240 +=1
+                except:
+                    try:
+                        pc2.half_by_plane(n=1024, grid_resolution=(330, 330))
+                        rate_300 += 1
+                    except:
+                        pc2.half_by_plane(n=1024, grid_resolution=(400, 400))
+                        rate_360 += 1
+            scene_dataset[i, j*1024:j*1024+1024, :] = pc2.visible
+            scene_label[i, j*1024:j*1024+1024] = k
+    print('180 240 300 360:', rate_180, rate_240, rate_300, rate_360)
     if show_result:
         for i in range(1):
             scene_pc = scene_dataset[i, :, :]
@@ -630,7 +644,7 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
             scalars = np.arange(np.shape(colors)[0])
 
             pts = mlab.quiver3d(scene_pc.position[:, 0], scene_pc.position[:, 1], scene_pc.position[:, 2],
-                                scene_pc.position[:, 0]*10**-9 +1, scene_pc.position[:, 0]*10**-9 +1,
+                                scene_pc.position[:, 0]*10**-9 + 1, scene_pc.position[:, 0]*10**-9 +1,
                                 scene_pc.position[:, 0] * 10 ** -9 + 1, scalars=scalars,
                                 scale_factor=1, mode='sphere', figure=figure)
             pts.glyph.color_mode = 'color_by_scalar'
@@ -638,16 +652,16 @@ def scene_seg_dataset(pc_path, save_path, samples=100, max_nb_pc=10, show_result
             mlab.show()
 
     hdf5_file = h5py.File(save_path, mode='a')
-    hdf5_file.create_dataset('train_set', (samples, max_nb_pc*2048, 3), np.float32)  # be careful about the dtype
-    hdf5_file.create_dataset('train_labels', (samples, max_nb_pc*2048), np.uint8)
+    hdf5_file.create_dataset('train_set', (samples, max_nb_pc*1024, 3), np.float32)  # be careful about the dtype
+    hdf5_file.create_dataset('train_labels', (samples, max_nb_pc*1024), np.uint8)
     hdf5_file["train_set"][...] = scene_dataset
     hdf5_file["train_labels"][...] = scene_label
     hdf5_file.close()
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
-            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=5000, nb_types=8)
+    # save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/randomsample_data.h5',
+    #         base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', n=5000, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -677,7 +691,7 @@ if __name__ == "__main__":
     # pc = PointCloud(pc)
     # pc.show()
 
-    # scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
-    #                   save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation2.h5',
-    #                   samples=100, max_nb_pc=10,
-    #                   show_result=True)
+    scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
+                      save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation3.h5',
+                      samples=1000, max_nb_pc=5,
+                      show_result=True)

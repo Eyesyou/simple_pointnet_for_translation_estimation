@@ -513,7 +513,10 @@ def inference(model_path, show_result=False, use_local=False, times=1,
         classification_output4tsne = np.reshape(classification_output4tsne, (-1, 256))
         tsne_label = np.reshape(tsne_label, (-1, ))
         point_clouds = np.reshape(point_clouds, (-1, nb_points, 3))
-        plot_embedding_3d(classification_output4tsne, tsne_label, point_clouds=point_clouds)
+        np.save('classification_output4tsne.npy',classification_output4tsne)
+        np.save('tsne_label.npy', tsne_label)
+        np.save('point_clouds.npy', point_clouds)
+        # plot_embedding_3d(classification_output4tsne, tsne_label, point_clouds=point_clouds)
 
 def get_bn_decay(batch):
     # ofr batch decay
@@ -1176,6 +1179,6 @@ if __name__ == "__main__":
     # train(model_name="object8.ckpt", use_local=True)
 
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=5, test_batchsize=5)  # test time
-    # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
-    inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
+     inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
+    # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()
