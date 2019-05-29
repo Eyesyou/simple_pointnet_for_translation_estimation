@@ -204,6 +204,7 @@ def feature_mean_deviation(pc_path, samples=15, chamfer=True, method='ball'):
         pc = PointCloud(i)
         if method =='ball':
             features = pc.generate_r_neighbor()
+
         elif method =='knn':
 
             pass

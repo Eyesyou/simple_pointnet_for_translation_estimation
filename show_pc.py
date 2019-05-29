@@ -1224,6 +1224,24 @@ class PointCloud:
             mlab.show()
         return centers
 
+    def compute_feature(self, method=''):
+        """
+
+        :param method: ball-default 0.05*range knn-default 64 points octree-default 64 points kdtree-default 3 layer
+        :return:
+        """
+        if method == 'ball':
+            features = pc.generate_r_neighbor()
+
+        elif method == 'knn':
+
+            pass
+        elif method == 'octree':
+
+            pass
+        elif method == 'kdtree':
+
+            pass
 
 def point2plane_dist(point, plane):
     """
