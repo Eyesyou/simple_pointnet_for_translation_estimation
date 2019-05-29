@@ -189,6 +189,31 @@ def vis_first_layer(net_input_point_cloud, first_layrer_output, vis_rate=1/10, s
     plt.show()
 
 
+def feature_mean_deviation(pc_path, samples=15, chamfer=True, method='ball'):
+    """
+
+    :param pc_path:
+    :param samples:
+    :param chamfer:
+    :param method: ball-default 0.05*range knn-default 64 points octree-default 64 points kdtree-default 3 layer
+    :return:
+    """
+    f_list = [pc_path + '/' + i for j, i in enumerate(os.listdir(pc_path)) if
+              os.path.splitext(i)[1] == '.txt' and j < samples]
+    for i in f_list:
+        pc = PointCloud(i)
+        if method =='ball':
+            features = pc.generate_r_neighbor()
+        elif method =='knn':
+
+            pass
+        elif method == 'octree':
+
+            pass
+        elif method == 'kdtree':
+
+            pass
+
 if __name__ == "__main__":
 
     # print('the type of X_tsne is {}:, the shape is {}'.format(type(X), X.shape))
@@ -220,12 +245,13 @@ if __name__ == "__main__":
     #     plt.savefig(str(i)+'.png')
     #     plt.close()
     # pass
-    print(plt.cm.Set1((2 + 1) / 10.)[:3])
-    pass
-    pc = h5py.File('aishuo.h5', 'r')
-    pc = pc['data'][:][0]
-    layer = np.load('data64_1.npy')
-    print('layer shape:', np.shape(layer))
-    layer = np.reshape(layer, [1024, -1])
-    print(pc.shape, layer.shape)
-    vis_first_layer(pc, layer, vis_rate=1/10)
+    # print(plt.cm.Set1((2 + 1) / 10.)[:3])
+    # pass
+    # pc = h5py.File('aishuo.h5', 'r')
+    # pc = pc['data'][:][0]
+    # layer = np.load('data64_1.npy')
+    # print('layer shape:', np.shape(layer))
+    # layer = np.reshape(layer, [1024, -1])
+    # print(pc.shape, layer.shape)
+    # vis_first_layer(pc, layer, vis_rate=1/10)
+    feature_mean_deviation('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.02noise/lab1')

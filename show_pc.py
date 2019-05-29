@@ -670,9 +670,9 @@ class PointCloud:
         if homo_transformation == None:
             ran_pos = np.concatenate([np.random.uniform(low=0.99, high=1, size=(1, 1)),
                                       np.random.uniform(low=0.6, high=1, size=(1, 3)),
-                                      np.random.uniform(low=-150, high=150, size=(1, 3))
+                                      np.random.uniform(low=-self.range*0.8, high=self.range*0.8, size=(1, 3))
                                       ], axis=1)
-            ran_pos = np.concatenate([ran_pos[:, 0:4]/np.linalg.norm(ran_pos[:, 0:4], axis=1), ran_pos[:,4:7]], axis=1)
+            ran_pos = np.concatenate([ran_pos[:, 0:4]/np.linalg.norm(ran_pos[:, 0:4], axis=1), ran_pos[:, 4:7]], axis=1)
             homo_transformation = np_quat_pos_2_homo(ran_pos)
 
         batchout = np.matmul(homo_transformation, batchout)  # Bx4x4 * B x 4 x n
@@ -1492,6 +1492,9 @@ def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_ra
     print('mean is ', mean, 'distance array is ', distance_array)
 
 
+
+
+
 if __name__ == "__main__":
     # org = cv2.imread('/home/sjtu/Pictures/asy/point clouds/1th_image_30th_epoch.png')
     # now = cv2.cvtColor(org, cv2.COLOR_BGR2GRAY)
@@ -1518,7 +1521,7 @@ if __name__ == "__main__":
     # print(time.time() - a, 's')
     # mlab.show()
     #base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab1'
- #   robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.05, region_growing=True, chamfer=False, chose_rate=0.7)
+    #robust_test_kpts(pc_path=base_path, percentage=0.1, range_rate=0.05, region_growing=True, chamfer=False, chose_rate=0.7)
 
 
     #    pc.compute_key_points(use_deficiency=True, show_saliency=True)
