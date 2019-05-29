@@ -63,7 +63,7 @@ def tf_euler_pos_2_homo(batch_input):
     return batch_out
 
 
-def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=True):
+def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=None, use_local=True):
     """
     perform skip link aggregation
     :param point_cloud:   Input (XYZ) Transform Net, input is BxNx3
@@ -86,14 +86,25 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
     #                    bn=True, is_training=is_training,
     #                     scope='hconv111', bn_decay=bn_decay, weight_decay=0.0)     #BxNx1x64 4 variables of weight bises beta gamma
 
-    point_wise_1 = tf.layers.conv2d(inputs=net, filters=64, kernel_size=[1, 3])   # Bx1024x1x64
+    point_wise_1 = tf_util.conv2d(input_image, 64, [1, 3],
+                                 padding='VALID', stride=[1, 1],
+                                 bn=True, is_training=is_training,
+                                 scope='homo_conv1', bn_decay=bn_decay,
+                                 activation_fn=tf.nn.relu)      # Bxnx1x64
+
     test_layer_output2 = point_wise_1
 
     #net = tf_util.conv2d(net, 128, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv12', bn_decay=bn_decay, weight_decay=0.0)
-    point_wise_2 = tf.layers.conv2d(inputs=point_wise_1, filters=128, kernel_size=[1, 1], activation=tf.nn.relu)
+    point_wise_2 = tf_util.conv2d(point_wise_1, 128, [1, 1],
+                                 padding='VALID', stride=[1, 1],
+                                 bn=True, is_training=is_training,
+                                 scope='homo_conv2', bn_decay=bn_decay, activation_fn=tf.nn.relu)  # Bxnx1x128
 
-    point_wise_3 = tf.layers.conv2d(inputs=point_wise_2, filters=512, kernel_size=[1, 1], activation=tf.nn.relu)  # BxNx1x512
+    point_wise_3 = tf_util.conv2d(point_wise_2, 512, [1, 1],
+                                 padding='VALID', stride=[1, 1],
+                                 bn=True, is_training=is_training,
+                                 scope='homo_conv3', bn_decay=bn_decay, activation_fn=tf.nn.relu)  # Bxnx1x512
 
     #net = tf_util.conv2d(net, 1024, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv13', bn_decay=bn_decay, weight_decay=0.0)
@@ -145,21 +156,6 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, use_local=Tr
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 1, -1])  # b x nb_key_pts x 1 x 1024
-
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=512,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 512
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
-        # point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=1024,
-        #                                      kernel_size=[1, 1], activation=tf.nn.relu)  # b x nb_key_pts x 1 x 1024
 
         point_cloud_local = tf.layers.max_pooling2d(point_cloud_local, pool_size=(int(1024 * 0.1), 1),
                                                     strides=1)  # b x 1 x 1 x 1024

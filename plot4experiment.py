@@ -80,7 +80,6 @@ def plot_embedding_3d(X, Y, title=None, point_clouds=None):
     ax = fig.add_subplot(1, 1, 1, projection='3d')
     mfig = mlab.figure(size=(1920, 1080), bgcolor=(1, 1, 1))
 
-
     point_clouds = point_clouds / 1000  # n x 1024 x 3 you have to shrink point cloud for clearity
     nb_points = np.shape(point_clouds)[1]
     point_clouds += np.tile(X_tsne[:, np.newaxis, :], (1, nb_points, 1))  # n x 1024 x 3

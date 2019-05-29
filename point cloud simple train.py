@@ -44,12 +44,12 @@ nb_points = 1024
 key_pts_percentage = 0.1
 # tile_size = 256   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/normalized_with_rectrl.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/normalized_with_rectrl.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
-quaternion_range = [0, 0.3]
+quaternion_range = [0, 0.5]
 translation_range = [-5, 5]
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
 pc_tile *= 100   # for scale
@@ -548,7 +548,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
-    print('generate random_pose once here:')
+    # generate random_pose once here
     ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=0.99, maxval=1),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
@@ -568,7 +568,8 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     with tf.variable_scope('homo_transform_net') as sc:
         transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
-                                                                        is_training, use_local=use_local) # B x 7 predicted transformation
+                                                                        is_training, bn_decay=bn_decay,
+                                                                        use_local=use_local)  # B x 7 predicted transformation
 
     #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
     #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
@@ -621,7 +622,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     #net_transformed = tf.matmul(tf.squeeze(net), transformation_feature) #Bx1024x64  matmul Bx64x64 equals Bx1024x64
 
-    net_transformed = net                                                    #not apply feature transform
+    net_transformed = net            #not apply feature transform
 
     #net_transformed = tf.expand_dims(net_transformed, [2])  #Bx1024x1x64
 
@@ -705,13 +706,13 @@ def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=1000, po
 
     # Enforce the transformation as orthogonal matrix
     transform = end_points['transform']  # BxKxK the feature transformation
-    K = transform.get_shape()[1].value  # K=64
+    K = transform.get_shape()[1].value  # K=4
 
     mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1])) # BxKxK
     mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
     mat_diff_loss = tf.nn.l2_loss(mat_diff)  # the difference with identity matrix
 
-    trans_diff = rotation_weight * end_points['trans_dis'][0] + end_points['trans_dis'][1]
+    trans_diff = rotation_weight * end_points['trans_dis'][0] + end_points['trans_dis'][1]  # rotation and translation
 
     tf.summary.scalar('mat loss', mat_diff_loss)
     final_loss = tf.add(classify_loss, mat_diff_loss * reg_weight)
@@ -1030,6 +1031,7 @@ def compute_pos_distance(batch_pos1, batch_pos2):
 
     homo_pos1 = tf_quat_pos_2_homo(batch_pos1)  # B x 4 x 4
     inv_homo_pos1 = tf.matrix_inverse(homo_pos1)  # B x 4 x 4
+    # inverse of the quaternion of q (w x y z) is q*(w -x -y -z)
     inv_quat_pos1 = tf.concat(
         [tf.slice(batch_pos1, [0, 0], [batch, 1]), -1.0 * tf.slice(batch_pos1, [0, 1], [batch, 3]),
          tf.squeeze(tf.slice(inv_homo_pos1, [0, 0, 3], [batch, 3, 1]), axis=2)], axis=1)  # B x 7
@@ -1176,9 +1178,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="object8.ckpt", use_local=True)
+    train(model_name="object8_2.ckpt", use_local=True)
 
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=5, test_batchsize=5)  # test time
-     inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
+    #inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

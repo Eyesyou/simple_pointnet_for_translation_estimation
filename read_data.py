@@ -41,7 +41,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
 
                     pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
                     pc = PointCloud(pc)
-                    pc.normalize()
+                    # pc.normalize()   # partial point cloud should not normalize
 
                     expand = np.expand_dims(pc.position, axis=0)
                     pc_tile[j, :, :] = expand
@@ -204,18 +204,11 @@ def test_data(h5_path='', rand_trans=False, showinone=False):
         plt.show()
 
 
-def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5000, not_project=False,
+def augment_data(base_path='', pc_path='', add_noise=0.04, add_outlier=0.04, n=5000, not_project=False,
                  show_result=False):
 
-
-    plydata = PlyData.read(pc_path)
-    vertex = np.asarray([list(subtuple) for subtuple in plydata['vertex'][:]])
-    pc = vertex[:, 0:3]
-    np.random.shuffle(pc)  # will only shuffle the first axis
-
-    if pc.shape[0] > 10000:
-        pc = pc[0:10000, :]
-    pc = PointCloud(pc)
+    pc = PointCloud(pc_path)
+    pc.down_sample()
 
     if add_noise is not None:
         pc.add_noise(factor=add_noise)
@@ -230,19 +223,25 @@ def augment_data(base_path='', pc_path='', add_noise=0.05, add_outlier=0.05, n=5
             temp.down_sample(number_of_downsample=1024)
             np.savetxt(base_path + '/random_sample' + str(i) + '.txt', temp.position, delimiter=' ')
     else:
-        for i in range(n):
+        for i in range(111, n):
             if i % 10 == 0:
                 print('saving number', i+1, 'th lab_project point clouds')
+
+            pc.cut_by_plane()
+            pc2 = PointCloud(pc.visible)
             try:
-                pc.half_by_plane(grid_resolution=(300, 300))
-                np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')  # pc.visible will variant
-            except ValueError:
+                pc2.half_by_plane(n=1024, grid_resolution=(200, 200))
+            except:
                 try:
-                    pc.half_by_plane(grid_resolution=(300, 300))
-                    np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
-                except ValueError:
-                    pc.half_by_plane(grid_resolution=(300, 300))
-                    np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc.visible, delimiter=' ')
+                    pc2.half_by_plane(n=1024, grid_resolution=(350, 350))
+                except:
+                    try:
+                        pc2.half_by_plane(n=1024, grid_resolution=(500, 500))
+                    except:
+                        pc2.half_by_plane(n=1024, grid_resolution=(650, 650))
+
+            np.savetxt(base_path+'/lab_project'+str(i)+'.txt', pc2.visible, delimiter=' ')  # pc.visible will variant
+
     if show_result:
         dir_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.isdir(i)]
         fig = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
@@ -681,17 +680,17 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    #for i in range(5, 9):
-    #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i),
-    #                 pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/lab'+str(i)+'/final.ply',
-    #                 add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
+    for i in range(3, 9):
+        augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/lab'+str(i),
+                     pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/lab'+str(i)+'/final.ply',
+                     add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
     # pc = PointCloud(pc)
     # pc.show()
 
-    scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
-                      save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation3.h5',
-                      samples=1000, max_nb_pc=5,
-                      show_result=True)
+    #scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
+    #                  save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation3.h5',
+    #                  samples=1000, max_nb_pc=5,
+    #                 show_result=True)

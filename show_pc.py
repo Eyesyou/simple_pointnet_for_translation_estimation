@@ -581,6 +581,7 @@ class PointCloud:
                 assert medium.shape[0] >= n  # sampled points have to be bigger than n
             except AssertionError:
                 print('sampled points number is:', medium.shape[0])
+
                 raise ValueError('value error, increase grid number')
             np.random.shuffle(medium)  # only shuffle the first axis
             self.visible = medium[0:n, :]
@@ -600,6 +601,8 @@ class PointCloud:
             fig = mlab.points3d(self.visible[:, 0], self.visible[:, 1], self.visible[:, 2],
                                 self.visible[:, 2] * 10 ** -2 + 1, color=(0, 1, 0),  # +self.range * scale
                                 scale_factor=0.4)  # colormap='Spectral', color=(0, 1, 0)
+            fig.glyph.glyph_source.glyph_source.phi_resolution = 64
+            fig.glyph.glyph_source.glyph_source.theta_resolution = 64
             mlab.show()
 
     def cut_by_plane(self, plane=None, show_result=False):
@@ -1205,7 +1208,7 @@ class PointCloud:
         """
 
         :param show_result:
-        :return:
+        :return: region_growing centers
         """
         self.compute_key_points(rate=range_rate, percentage=percentage*4)
         centers = region_growing_cluster_keypts(self.position[self.keypoints, :], nb_pts=int(self.nb_points*percentage),
@@ -1312,7 +1315,7 @@ def show_projection(pc_path='', nb_sample=10000, show_origin=False, add_noise=Tr
             for i in range(5):
                 pc_class.half_by_plane(grid_resolution=(400, 400))
 
-                x = 30  # cone offset todo you have to manually ajust the cone origin
+                x = 30  # cone offset todo you have to manually ajust the cone origin here !!!
                 y = -30
                 z = 50
                 u = pc_class.plane_project_points[1, 0] - pc_class.visible[1, 0]
