@@ -685,6 +685,12 @@ class PointCloud:
         self.max_limit = np.amax(self.position, axis=0)
 
     def octree(self, show_layers=0, colors=None):
+        """
+
+        :param show_layers:
+        :param colors:
+        :return: nothing , update self.root
+        """
         def width_first_traversal(position, size, data):
             root = OctNode(position, size, data)
             if np.shape(np.array(list(set([tuple(t) for t in root.data]))))[0] == 1:
@@ -875,7 +881,7 @@ class PointCloud:
         :param rate: range ratio of the neighbor scale
         :param show_result:
         :param use_dificiency: compute dificiency for every point
-        :return:
+        :return: nothing update self.point_rneighbors
         """
         assert 0 < range_rate < 1
         r = self.range * range_rate
@@ -993,7 +999,7 @@ class PointCloud:
             self.visible = self.position
             print('after down_sampled points:', self.nb_points, ' points', 'range:', self.range)
 
-    def compute_covariance_mat(self, neighbor_pts=None, rate=0.05, use_dificiency=False):
+    def compute_covariance_mat(self, neighbor_pts=None, parameter=0.05, use_dificiency=False):
         """
         weighted covariance matrix, also scatter matrix
         :param neighbor_pts: b x k x d array, b is the number of points , k is the nb_neighbors,
@@ -1003,7 +1009,7 @@ class PointCloud:
         """
 
         if neighbor_pts is None:  # default neighbors are k neighbors
-            self.generate_k_neighbor()
+            self.generate_k_neighbor(k=parameter)
             neighbor_pts = self.position[self.point_kneighbors]  # nx3[nxk] = nxkx3
             n = neighbor_pts.shape[0]  # n
             k = neighbor_pts.shape[1]  # k
@@ -1011,9 +1017,9 @@ class PointCloud:
             a = neighbor_pts - 1 / k * tmp
             result = np.transpose(a, axes=[0, 2, 1]) @ a * 1 / k  # b x k x n @ # b x n x k = b x k x k
 
-        if neighbor_pts == 'point_rneighbors':
+        elif neighbor_pts == 'point_rneighbors':
             print('using ball query to find key points')
-            self.generate_r_neighbor(range_rate=rate, use_dificiency=use_dificiency)
+            self.generate_r_neighbor(range_rate=parameter, use_dificiency=use_dificiency)
 
             whole_weight = 1 / (~np.isnan(self.point_rneighbors)).sum(1)  # do as ISS paper said
             whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
@@ -1039,6 +1045,21 @@ class PointCloud:
                     result[i, :, :] = np.eye(3)
 
             assert not np.isnan(result.any())
+        elif neighbor_pts =='octree':
+            # default layer is 3
+            if self.root is None:
+                self.octree()
+
+            for i, child in enumerate(self.root.children):
+                if child is not None:
+                    for j, grand_child in enumerate(child.children):
+                        mlab.points3d(grand_child.data[:, 0], grand_child.data[:, 1], grand_child.data[:, 2],
+                                      grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, :].tolist()),
+                                      scale_mode='scalar', scale_factor=1)
+
+        elif neighbor_pts =='kdtree':
+            self.kd_tree(leafsize=parameter)
+
         return result
 
     def resolution_kpts(self, Importance_Ranking, Voxel_Size, Sampled_Number):
@@ -1095,7 +1116,7 @@ class PointCloud:
         """
 
         nb_key_pts = int(self.nb_points*percentage)
-        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', rate=rate, use_dificiency=use_deficiency)  # nx3x3
+        self.weighted_covariance_matix = self.compute_covariance_mat(neighbor_pts='point_rneighbors', parameter=rate, use_dificiency=use_deficiency)  # nx3x3
 
         # compute the eigen value, the smallest eigen value is the variation of the point
         eig_vals = np.linalg.eigvals(self.weighted_covariance_matix)
@@ -1161,8 +1182,15 @@ class PointCloud:
                           scale_factor=0.2, figure=fig, line_width=2, resolution=64)
             mlab.show()
 
-    def kd_tree(self, show_result=False, colors=None):
-        kd_tree = spatial.KDTree(self.position, leafsize=256)
+    def kd_tree(self, leafsize=256 , show_result=False, colors=None):
+        """
+
+        :param show_result:
+        :param colors:
+        :return: leaf_set
+        """
+
+        kd_tree = spatial.KDTree(self.position, leafsize=leafsize) # if leaf less than leaf size, stop recurrent
 
         def leaf_traverse(tree, set):
             if hasattr(tree, 'greater'):
@@ -1182,9 +1210,10 @@ class PointCloud:
                 x = self.position[idx, 0]
                 y = self.position[idx, 1]
                 z = self.position[idx, 2]
-                mlab.points3d(x, y, z, z * 10**-2 + 2, color=tuple(colors[i,:].tolist()),  # +self.range * scale
+                mlab.points3d(x, y, z, z * 10**-2 + 2, color=tuple(colors[i, :].tolist()),  # +self.range * scale
                               scale_factor=0.8, figure=fig, line_width=2, resolution=64)
             mlab.show()
+        return leaf_set
 
     def region_growing(self, show_result=False, range_rate=0.05, percentage=0.1, inter_dist=1/100, intra_dist=1/20):
         """
@@ -1228,20 +1257,55 @@ class PointCloud:
         """
 
         :param method: ball-default 0.05*range knn-default 64 points octree-default 64 points kdtree-default 3 layer
-        :return:
+        :return:  if octree ? x t feature vetor, if ball, n x t if knn, n x t, if kd tree, ? x t
+        by default is the lambda1-lambda2/lambda1 lambda2-lambda3/lambda1 lambda3/lambda1 lambda1-lambda3/lambda1
+        Linearity planarity Scattering Anisotropy
         """
         if method == 'ball':
-            features = pc.generate_r_neighbor()
+
+            cov = self.compute_covariance_mat(self, neighbor_pts='point_rneighbors', parameter=0.05, use_dificiency=False) # n x 3 x 3
+            eig_vals = np.linalg.eigvals(cov)
+            assert np.isreal(eig_vals.all())
+            eig_vals = np.sort(eig_vals, axis=1)  # n x 3
+            l1 = eig_vals[:, 0]
+            l2 = eig_vals[:, 1]
+            l3 = eig_vals[:, 2]
+            return np.concatenate([(l1-l2)/l1, (l2-l3)/l1, l3/l1, (l1-l3)/l1], axis=1)
 
         elif method == 'knn':
+            cov = self.compute_covariance_mat(self, parameter=64,
+                                              use_dificiency=False)  # n x 3 x 3
+            eig_vals = np.linalg.eigvals(cov)
+            assert np.isreal(eig_vals.all())
+            eig_vals = np.sort(eig_vals, axis=1)  # n x 3
+            l1 = eig_vals[:, 0]
+            l2 = eig_vals[:, 1]
+            l3 = eig_vals[:, 2]
+            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
 
-            pass
         elif method == 'octree':
 
-            pass
-        elif method == 'kdtree':
+            cov = self.compute_covariance_mat(self, neighbor_pts='octree', parameter=64,
+                                              use_dificiency=False)  # n x 3 x 3
+            eig_vals = np.linalg.eigvals(cov)
+            assert np.isreal(eig_vals.all())
+            eig_vals = np.sort(eig_vals, axis=1)  # n x 3
+            l1 = eig_vals[:, 0]
+            l2 = eig_vals[:, 1]
+            l3 = eig_vals[:, 2]
+            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
 
-            pass
+        elif method == 'kdtree':
+            cov = self.compute_covariance_mat(self, neighbor_pts='kdtree', parameter=64,
+                                              use_dificiency=False)  # n x 3 x 3
+            eig_vals = np.linalg.eigvals(cov)
+            assert np.isreal(eig_vals.all())
+            eig_vals = np.sort(eig_vals, axis=1)  # n x 3
+            l1 = eig_vals[:, 0]
+            l2 = eig_vals[:, 1]
+            l3 = eig_vals[:, 2]
+            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
+
 
 def point2plane_dist(point, plane):
     """
@@ -1508,9 +1572,6 @@ def robust_test_kpts(pc_path, samples=15, chamfer=True, percentage=0.1, range_ra
                             hausdorff_dist(pc1.position[pc1.keypoints, :], pc2.position[pc2.keypoints, :], chose_rate=chose_rate))
     mean = np.mean(distance_array)
     print('mean is ', mean, 'distance array is ', distance_array)
-
-
-
 
 
 if __name__ == "__main__":
