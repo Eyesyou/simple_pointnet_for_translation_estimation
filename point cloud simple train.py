@@ -13,6 +13,7 @@ from sklearn import preprocessing
 from show_samples import plotit
 import show_pc
 from show_pc import PointCloud
+from matplotlib import pyplot as plt
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
 from plot4experiment import vis_first_layer , plot_embedding_3d
 from read_data import get_local_eig_np
@@ -84,7 +85,10 @@ light3 = light[2, :].tolist()
 shade3 = shade[2, :].tolist()
 light4 = light[3, :].tolist()
 shade4 = shade[3, :].tolist()
+
 colorset = [shade1, light1, shade2, light2, shade3, light3, shade4, light4]
+
+colorset = [[plt.cm.Set1(i)[:3], tuple(np.asarray(plt.cm.Set1(i)[:3])*0.7)] for i in range(8)]
 
 print('initial learning rate :', init_learning_rate, '\n', 'decay_rate is :', decay_rate, '\n',
       'decay_step is: ', decay_step, 'max_epoch is:', max_epoch, '\n', 'batchsize is:', batchsize)
@@ -419,6 +423,7 @@ def inference(model_path, show_result=False, use_local=False, times=1,
            'compare':  end_points['compare'],
            'original_pc': end_points['test_layer1'],
            'recovered_pc': end_points['test_layer2'],
+           'moved_pc': end_points['moved_pc'],
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
            'first_layer_output': end_points['first_layer_output'],
@@ -437,24 +442,24 @@ def inference(model_path, show_result=False, use_local=False, times=1,
             points = np.concatenate([np.reshape(xi, [-1, 1]), np.reshape(yi, [-1, 1]), np.reshape(zi, [-1, 1])], axis=1)
             np.random.shuffle(points)
             points = points[np.newaxis, 0:1024, :]
-            # pc_tile = points   # once define pc_tile here, pc_tile becomes local variable
-            # pc_local_eigs = get_local_eig_np(points)   # once define pc_local_eigs here,pc_tile becomes local variable
+            # pc_tile = points   # todo once define pc_tile here, pc_tile becomes local variable
+            # pc_local_eigs = get_local_eig_np(points)   # todo once define pc_local_eigs here,pc_tile becomes local variable
 
         rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
 
         tsne_label[j] = pc_label[rand_idx]  # (b, )
-        point_clouds[j] = pc_tile[rand_idx,:,:]  # (b x nb_points x 3)
+        point_clouds[j] = pc_tile[rand_idx, :, :]  # (b x nb_points x 3)
         feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
                      ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
                      ops['labels_pl']: pc_label[rand_idx],
                      ops['is_training_pl']: False}
 
         start = time.time()
-        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, summary, cls_out, first_ly] = \
+        [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, mpc, summary, cls_out, first_ly] = \
             sess.run([ops['pred'], ops['loss'], ops['random_pos'],
                       ops['predict_pos'], ops['trans_dis'],
                       ops['original_pc'], ops['recovered_pc'],
-                      ops['inference_summary_merged'],
+                      ops['moved_pc'], ops['inference_summary_merged'],
                       ops['classification_output'],
                       ops['first_layer_output']],
                       feed_dict=feed_dict)
@@ -479,35 +484,23 @@ def inference(model_path, show_result=False, use_local=False, times=1,
         #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
     if show_result:
-        rand_trans = np.random.random([test_batchsize, 3])*30000   # todo manually ajust the translation range
+        rand_trans = np.random.random([test_batchsize, 3])*200   # todo manually ajust the translation range
         rand_trans = np.expand_dims(rand_trans, axis=1)
         rand_trans = np.tile(rand_trans, [1, 1024, 1])
 
         opc += rand_trans
         rpc += rand_trans
 
-        ran_pos = np.concatenate([np.random.uniform(size=(test_batchsize, 1), low=0.99, high=1),
-                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
-                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
-                                  np.random.uniform(size=(test_batchsize, 1), low=quaternion_range[0], high=quaternion_range[1]),
-                                  np.random.uniform(size=(test_batchsize, 3), low=translation_range[0], high=translation_range[1])],
-                                  axis=1)  # random_ROTATION_and POSITION, batch x 7
+        show_pc.show_trans(mpc, rpc, colorset=colorset, scale=2)  # simulate the ramdon
 
-        ran_pos = np.concatenate([preprocessing.normalize(ran_pos[:, :4], norm='l2'), ran_pos[:, 4:7]], axis=1)
-        # normalize random pose
-        ran_pos = np_quat_pos_2_homo(ran_pos)
-        move_pc = apply_np_homo(opc, ran_pos)
-
-        show_pc.show_trans(move_pc, rpc, colorset=colorset, scale=300)  # simulate the ramdon
-
-        show_pc.show_trans(opc, rpc, colorset=colorset, scale=300)
+        show_pc.show_trans(opc, rpc, colorset=colorset, scale=2)
 
     if vis_feature:
-        print('points and values:', points)
-        print('points and values:', first_ly)
-
+        print('points and values:', points,'shapes', np.shape(points))
+        print('points and values:', first_ly, 'shapes', np.shape(first_ly))
+        np.save('points.npy', points)
         np.save('first_ly.npy', first_ly)
-        # vis_first_layer(points, np.squeeze(first_ly, axis=0))
+        vis_first_layer(np.squeeze(points, axis=0), np.squeeze(first_ly, axis=0))
 
     if vis_tsne:
         classification_output4tsne = np.reshape(classification_output4tsne, (-1, 256))
@@ -563,6 +556,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     ran_homo = tf_quat_pos_2_homo(ran_pos)  # Bx4x4
     if apply_rand:
         point_cloud_jitterd = apply_homo_to_pc(point_cloud, ran_homo)  # add this to input batch for data_augmentation
+        end_points['moved_pc'] = point_cloud_jitterd
     else:
         point_cloud_jitterd = point_cloud
 
@@ -1178,9 +1172,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object8_2.ckpt", use_local=True)
+    # train(model_name="object8_2.ckpt", use_local=True)
 
-    # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=5, test_batchsize=5)  # test time
-    #inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
+    inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=True, times=5, test_batchsize=8)  # test time
+    # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

@@ -155,35 +155,17 @@ def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4
     colorset = [tuple(i) for i in colorset]
 
     for i in range(B):
-
-        if i % 4 == 0:
-            if not use_mayavi:
-                ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[0], s=5)
-                ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[1], s=5)
-            else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[0], scale_factor=1)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[1], scale_factor=1)
-        elif i % 4 == 1:
-            if not use_mayavi:
-                ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[2], s=5)
-                ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[3], s=5)
-            else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[2], scale_factor=1)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[3], scale_factor=1)
-        elif i % 4 == 2:
-            if not use_mayavi:
-                ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[4], s=5)
-                ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[5], s=5)
-            else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[4], scale_factor=1)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[5], scale_factor=1)
-        elif i % 4 == 3:
-            if not use_mayavi:
-                ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[6], s=5)
-                ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[7], s=5)
-            else:
-                mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[6], scale_factor=1)
-                mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[7], scale_factor=1)
+        i_th_color = int(i % len(colorset))
+        if not use_mayavi:
+            ax.scatter(a1[i, :], b1[i, :], c1[i, :], color=colorset[0], s=scale)
+            ax.scatter(a2[i, :], b2[i, :], c2[i, :], color=colorset[1], s=scale)
+        else:
+            points = mlab.points3d(a1[i, :], b1[i, :], c1[i, :], c1[i, :] * 10**-9 + scale, color=colorset[i][0], scale_factor=1)
+            points2 = mlab.points3d(a2[i, :], b2[i, :], c2[i, :], c2[i, :] * 10**-9 + scale, color=colorset[i][1], scale_factor=1)
+            points.glyph.glyph_source.glyph_source.phi_resolution = 64
+            points.glyph.glyph_source.glyph_source.theta_resolution = 64
+            points2.glyph.glyph_source.glyph_source.phi_resolution = 64
+            points2.glyph.glyph_source.glyph_source.theta_resolution = 64
 
     Axes3D.grid(ax, b=False)
     if use_mayavi:

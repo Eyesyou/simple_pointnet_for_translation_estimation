@@ -146,8 +146,9 @@ def vis_first_layer(net_input_point_cloud, first_layrer_output, vis_rate=1/10, s
     :param first_layrer_output:  1024 x 64   number of points x features
     :return:
     """
+    assert np.shape(first_layrer_output)[1] > square_plot_nb
     nb_points = np.shape(net_input_point_cloud)[0]
-    fig = plt.figure(figsize=(19, 10), dpi=600, facecolor='w')
+    fig = plt.figure(figsize=(19, 10), dpi=300, facecolor='w')
 
     small_value = np.ones([square_plot_nb, 2])/.0  # create array of infs
 
@@ -167,7 +168,7 @@ def vis_first_layer(net_input_point_cloud, first_layrer_output, vis_rate=1/10, s
         idx = np.argpartition(values, int(nb_points * vis_rate))
         idx = idx[:int(nb_points * vis_rate)]
 
-        m_fig = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+        m_fig = mlab.figure(size=(500, 500), bgcolor=(1, 1, 1))
 
         points = mlab.points3d(net_input_point_cloud[idx, 0], net_input_point_cloud[idx, 1], net_input_point_cloud[idx, 2],
                       net_input_point_cloud[idx, 2] * 10 ** -2 + 1, colormap='Spectral', scale_factor=0.1, figure=m_fig,

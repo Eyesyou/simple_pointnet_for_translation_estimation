@@ -465,7 +465,7 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     idx = np.empty((batchsize, nb_key_pts))
     for i in range(batchsize):
         pc = PointCloud(point_cloud[i, :])
-        # specify the voxel size of resolution control
+        # specify the voxel size of resolution con_dix,trol
         _, idx[i, :] = resolution_kpts(pc.position, eigen_val[i, :, 0], pc.range/40, nb_key_pts)
 
     # print(eigen_val[idx])
