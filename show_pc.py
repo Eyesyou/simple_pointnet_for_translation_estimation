@@ -810,13 +810,13 @@ class PointCloud:
                 assert number_points == sum
 
             except AssertionError:
-                print('assertion error, total number of points in this level is:', number_points)
-                pass
-                for child in root.children:
-                    if child is not None:
-                        print(np.shape(child.data)[0], 'and', end=' ')
-                        pass
-                print('\n')
+                print('assertion error, total number of points is:', number_points)
+                print('total number of points in the tree is {} fewer than total number'.format(number_points-sum))
+                # for child in root.children:
+                #     if child is not None:
+                #         print(np.shape(child.data)[0], 'and', end=' ')
+                #         pass
+                # print('\n')
             return root
 
         self.root = width_first_traversal(self.center,
@@ -1047,18 +1047,32 @@ class PointCloud:
             assert not np.isnan(result.any())
         elif neighbor_pts =='octree':
             # default layer is 3
-            if self.root is None:
+            if self.root is None:  # check for root
                 self.octree()
-
+            result = np.array([]).reshape((0, 3, 3))
             for i, child in enumerate(self.root.children):
                 if child is not None:
                     for j, grand_child in enumerate(child.children):
-                        mlab.points3d(grand_child.data[:, 0], grand_child.data[:, 1], grand_child.data[:, 2],
-                                      grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, :].tolist()),
-                                      scale_mode='scalar', scale_factor=1)
+                        if grand_child is not None:
+                            for k, grandgrand_child in enumerate(grand_child.children):
+                                if grandgrand_child is not None:
+                                    if np.shape(grandgrand_child.data)[0] == 1:
+                                        result = np.concatenate([result, np.eye(3)[np.newaxis, :]], axis=0)
+                                    else:
+                                        result = np.concatenate([result,
+                                                    np.cov(grandgrand_child.data, rowvar=False, ddof=None)[np.newaxis, :]], axis=0)
 
         elif neighbor_pts =='kdtree':
-            self.kd_tree(leafsize=parameter)
+
+            leaf_set = self.kd_tree(leafsize=parameter)
+            result = np.array([]).reshape((0, 3, 3))
+            for i, idx in enumerate(leaf_set):
+                if len(idx)==1:
+                    result = np.concatenate([result, np.eye(3)[np.newaxis,:]], axis=0)
+                else:
+
+                    result = np.concatenate([result,
+                                        np.cov(self.position[idx, :], rowvar=False, ddof=None)[np.newaxis,:]], axis=0)
 
         return result
 
@@ -1199,12 +1213,12 @@ class PointCloud:
             else:
                 set.append(tree.idx.tolist())
 
+        kd_tree = kd_tree.tree
+        leaf_set = []
+        leaf_traverse(kd_tree, leaf_set)
         if show_result:
             if colors is None:
                 colors = np.random.random((100, 3))
-            kd_tree = kd_tree.tree
-            leaf_set = []
-            leaf_traverse(kd_tree, leaf_set)
             fig = mlab.figure(bgcolor=(1, 1, 1), size=(4000, 4000))
             for i, idx in enumerate(leaf_set):
                 x = self.position[idx, 0]
@@ -1263,48 +1277,50 @@ class PointCloud:
         """
         if method == 'ball':
 
-            cov = self.compute_covariance_mat(self, neighbor_pts='point_rneighbors', parameter=0.05, use_dificiency=False) # n x 3 x 3
+            cov = self.compute_covariance_mat(neighbor_pts='point_rneighbors',
+                                              parameter=0.05, use_dificiency=False)  # n x 3 x 3
             eig_vals = np.linalg.eigvals(cov)
             assert np.isreal(eig_vals.all())
             eig_vals = np.sort(eig_vals, axis=1)  # n x 3
-            l1 = eig_vals[:, 0]
+            l1 = eig_vals[:, 2]
             l2 = eig_vals[:, 1]
-            l3 = eig_vals[:, 2]
-            return np.concatenate([(l1-l2)/l1, (l2-l3)/l1, l3/l1, (l1-l3)/l1], axis=1)
+            l3 = eig_vals[:, 0]
+            return np.real(np.concatenate([(l1-l2)/l1, (l2-l3)/l1, l3/l1, (l1-l3)/l1], axis=0).reshape([-1, 4]))
 
         elif method == 'knn':
-            cov = self.compute_covariance_mat(self, parameter=64,
+            cov = self.compute_covariance_mat(parameter=64,
                                               use_dificiency=False)  # n x 3 x 3
             eig_vals = np.linalg.eigvals(cov)
             assert np.isreal(eig_vals.all())
             eig_vals = np.sort(eig_vals, axis=1)  # n x 3
-            l1 = eig_vals[:, 0]
+            l1 = eig_vals[:, 2]
             l2 = eig_vals[:, 1]
-            l3 = eig_vals[:, 2]
-            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
+            l3 = eig_vals[:, 0]
+            return np.real(np.concatenate([(l1-l2)/l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1],  axis=0).reshape([-1, 4]))
 
         elif method == 'octree':
-
-            cov = self.compute_covariance_mat(self, neighbor_pts='octree', parameter=64,
+            # octree do not require parameter
+            cov = self.compute_covariance_mat(neighbor_pts='octree',
                                               use_dificiency=False)  # n x 3 x 3
             eig_vals = np.linalg.eigvals(cov)
             assert np.isreal(eig_vals.all())
             eig_vals = np.sort(eig_vals, axis=1)  # n x 3
-            l1 = eig_vals[:, 0]
+            l1 = eig_vals[:, 2]
             l2 = eig_vals[:, 1]
-            l3 = eig_vals[:, 2]
-            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
+            l3 = eig_vals[:, 0]
+            return np.real(np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1],  axis=0).reshape([-1, 4]))
 
         elif method == 'kdtree':
-            cov = self.compute_covariance_mat(self, neighbor_pts='kdtree', parameter=64,
+
+            cov = self.compute_covariance_mat(neighbor_pts='kdtree', parameter=64,
                                               use_dificiency=False)  # n x 3 x 3
             eig_vals = np.linalg.eigvals(cov)
             assert np.isreal(eig_vals.all())
             eig_vals = np.sort(eig_vals, axis=1)  # n x 3
-            l1 = eig_vals[:, 0]
+            l1 = eig_vals[:, 2]
             l2 = eig_vals[:, 1]
-            l3 = eig_vals[:, 2]
-            return np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1], axis=1)
+            l3 = eig_vals[:, 0]
+            return np.real(np.concatenate([(l1 - l2) / l1, (l2 - l3) / l1, l3 / l1, (l1 - l3) / l1],  axis=0).reshape([-1, 4]))
 
 
 def point2plane_dist(point, plane):
@@ -1640,10 +1656,16 @@ if __name__ == "__main__":
     # mlab.show()
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
     f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
-    for i in f_list:
-        pc = PointCloud(i)
-        pc.cut_by_plane()
-        pc2 = PointCloud(pc.visible)
-        pc2.half_by_plane(show_result=True)
-
-    pass
+    print(f_list)
+    # for j, i in enumerate(f_list):
+    #     pc = PointCloud(i)
+    #     pc.down_sample(number_of_downsample=4096)
+    #     f1 = pc.compute_feature(method='ball')
+    #     np.savetxt('f1_'+str(j+1)+'.csv', f1)
+    #     f2 = pc.compute_feature(method='knn')
+    #     np.savetxt('f2_'+str(j+1)+ '.csv', f2)
+    #     f3 = pc.compute_feature(method='octree')
+    #     np.savetxt('f3_'+ str(j+1)+ '.csv', f3)
+    #     f4 = pc.compute_feature(method='kdtree')
+    #     np.savetxt('f4_'+ str(j+1)+ '.csv', f4)
+    # pass
