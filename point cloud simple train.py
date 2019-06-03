@@ -45,7 +45,7 @@ nb_points = 1024
 key_pts_percentage = 0.1
 # tile_size = 256   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/normalized_with_rectrl.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/simu_data.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_test = pc_tile[0, :, :]
@@ -1172,9 +1172,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="object8_2.ckpt", use_local=True)
+    train(model_name="object8_3.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=True, times=5, test_batchsize=8)  # test time
+    # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=True, times=5, test_batchsize=8)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

@@ -215,6 +215,68 @@ def feature_mean_deviation(pc_path, samples=15, chamfer=True, method='ball'):
 
             pass
 
+
+def icp_registration_error(sourcepc, targetpc, threshold=0.02):
+
+    source_o3dpc = o3d.geometry.PointCloud()
+    source_o3dpc.points = o3d.utility.Vector3dVector(sourcepc.position)
+    target_o3dpc = o3d.geometry.PointCloud()
+    target_o3dpc.points = o3d.utility.Vector3dVector(targetpc.position)
+
+    threshold = 0.02
+
+    draw_registration_result(source, target, trans_init)
+    print("Initial alignment")
+    evaluation = o3d.evaluate_registration(source, target,
+            threshold, trans_init)
+    print('evaluation:', evaluation)
+
+    print("Apply point-to-point ICP")
+    reg_p2p = o3d.registration_icp(source, target, threshold, init=np.eye(4),
+                                   estimation_method=o3d.TransformationEstimationPointToPoint())
+    print(reg_p2p)
+    print("reg_p2p Transformation is:")
+    print(reg_p2p.transformation)
+    print("transformation type is :", type(reg_p2p.transformation))
+    target.transform(trans_init)
+    draw_registration_result(source, target, reg_p2p.transformation)
+
+
+def knn_plot(pc_path=''):
+
+    f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
+    for j, i in enumerate(f_list):
+        if j < 4:
+            pc = PointCloud(i)
+            pc.down_sample(number_of_downsample=4096)
+
+            fig = pc.compute_key_points(percentage=0.02, resolution_control=1/15, rate=0.05, use_deficiency=False,show_result=True) # get the key points id
+
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=str(j) + '_0.png')
+            mlab.close()
+
+            fig = pc.generate_k_neighbor(k=32, show_result=True)
+
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=str(j) + '_1.png')
+            mlab.close()
+
+            fig = pc.generate_k_neighbor(k=64, show_result=True)
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=str(j) + '_2.png')
+            mlab.close()
+
+            fig = pc.generate_k_neighbor(k=128, show_result=True)
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=str(j) + '_3.png')
+            mlab.close()
+
+
 if __name__ == "__main__":
 
     # print('the type of X_tsne is {}:, the shape is {}'.format(type(X), X.shape))
@@ -255,4 +317,6 @@ if __name__ == "__main__":
     # layer = np.reshape(layer, [1024, -1])
     # print(pc.shape, layer.shape)
     # vis_first_layer(pc, layer, vis_rate=1/10)
-    feature_mean_deviation('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.02noise/lab1')
+    # feature_mean_deviation('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.02noise/lab1')
+    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    knn_plot(pc_path=base_path)

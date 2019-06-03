@@ -831,49 +831,108 @@ class PointCloud:
 
         self.depth = maxdepth(self.root)
 
+        def traverse_node(root, depth=3):
+            if depth == 1:
+                return [root, ]
+            child_list = []
+            for i in root.children:
+                if i is not None:
+                    grand_child_list = traverse_node(i, depth=depth-1)
+                    child_list += grand_child_list
+            return list(filter(None, child_list))
+
         if show_layers:
             if colors is None:
-                colors = np.random.random((8, 8, 8, 3))
+                colors = np.random.random((512, 3))
             mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
-            for i, child in enumerate(self.root.children):
-                if child is not None:
-                    for j, grand_child in enumerate(child.children):
-                        if grand_child is not None:
-                            # for k, grandgrand_child in enumerate(grand_child.children):
-                            #     if grandgrand_child is not None:
-                            k = 0
-                            mlab.points3d(grand_child.data[:, 0], grand_child.data[:, 1], grand_child.data[:, 2],
-                                          grand_child.data[:, 2]*10**-9+1, color=tuple(colors[i, j, k, :].tolist()),
-                                          scale_mode='scalar', scale_factor=1)
+            children_list = traverse_node(self.root, depth=show_layers)
+            for j, i in enumerate(children_list):
+                mlab.points3d(i.data[:, 0], i.data[:, 1], i.data[:, 2],
+                              i.data[:, 2] * 10 ** -9 + 1, color=tuple(colors[j, :].tolist()),
+                              scale_mode='scalar', scale_factor=1)
 
             mlab.show()
 
     def generate_k_neighbor(self, k=10, show_result=False):
+        """
+        compute k nearest points for every point
+        :param k:
+        :param show_result:
+        :return:
+        """
         assert k < self.nb_points
         self.point_kneighbors = None
         p_distance = distance.cdist(self.position, self.position)
-        idx = np.argpartition(p_distance, (1, k + 1), axis=0)[1:k + 1]
-        self.point_kneighbors = np.transpose(idx)  # n x 3
+        idx = np.argpartition(p_distance, (1, k + 1), axis=0)[1:k + 1]  # remove the identity point
+        self.point_kneighbors = np.transpose(idx)  # n x k
 
         if show_result:
-            for i in range(10):  # number of pictures you want to show
-                j = np.random.choice(self.nb_points, 1)  # point
+            colorset = np.random.random((100, 3))
+
+            if self.keypoints is not None:
+                print('key points already exist, plot them now')
                 fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+                for i in range(30):
+                    j = self.keypoints[i]
+                    neighbor_idx = self.point_kneighbors[j, :]
+                    neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
+                    # show the neighbor point cloud in color
+                    nei = mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
+                                  self.position[neighbor_idx, 2],
+                                  self.position[neighbor_idx, 0] * 10 ** -9 + self.range * 0.005,
+                                  color=tuple(colorset[i].tolist()),
+                                  scale_factor=2, figure=fig2)  # color can be tuple(np.random.random((3,)).tolist())
 
-                neighbor_idx = self.point_kneighbors[j, :]
-                neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
-                # show the neighbor point cloud
-                mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
-                              self.position[neighbor_idx, 2],
-                              self.position[neighbor_idx, 2] * 10**-6 + self.range * 0.05,
-                              color=tuple(np.random.random((3,)).tolist()),
-                              scale_factor=0.2)  # tuple(np.random.random((3,)).tolist())
+                    # show the whole point cloud
+                    total = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                                  self.position[:, 2] * 10 ** -9 + self.range * 0.005,
+                                  color=(0, 1, 0), scale_factor=1.5)
 
-                # show the whole point cloud
-                mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
-                              self.position[:, 2] * 10**-9 + self.range * 0.05,
-                              color=(0, 1, 0), scale_factor=0.1)
-                mlab.show()
+                    # show the key points
+                    key = mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                                  self.position[j, 0] * 10 ** -9 + self.range * 0.005,
+                                  color=(1, 0, 0), scale_factor=2)
+                    nei.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    nei.glyph.glyph_source.glyph_source.theta_resolution = 32
+                    total.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    total.glyph.glyph_source.glyph_source.theta_resolution = 32
+                    key.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    key.glyph.glyph_source.glyph_source.theta_resolution = 32
+                # mlab.show()
+                return fig2
+            else:
+                fig2 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
+                self.compute_key_points(percentage=0.02, resolution_control=1/15, rate=0.05, use_deficiency=False) # get the key points id
+
+                for i in range(30):
+                    # j = np.random.choice(self.nb_points, 1)  # choose one random point index to plot
+                    j = self.keypoints[i]
+                    neighbor_idx = self.point_kneighbors[j, :]
+                    neighbor_idx = neighbor_idx[~np.isnan(neighbor_idx)].astype(np.int32)
+                    # show the neighbor point cloud
+                    nei = mlab.points3d(self.position[neighbor_idx, 0], self.position[neighbor_idx, 1],
+                                  self.position[neighbor_idx, 2],
+                                  self.position[neighbor_idx, 0] * 10**-9 + self.range * 0.005,
+                                  color=tuple(colorset[i].tolist()),
+                                  scale_factor=2, figure=fig2, resolution=16)  # tuple(np.random.random((3,)).tolist())
+
+                    # show the whole point cloud
+                    total = mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
+                                  self.position[:, 2] * 10**-9 + self.range * 0.005,
+                                  color=(0, 1, 0), scale_factor=1.5, resolution=16, figure=fig2)
+
+                    # show the key point
+                    key = mlab.points3d(self.position[j, 0], self.position[j, 1], self.position[j, 2],
+                                  self.position[j, 0] * 10 ** -9 + self.range * 0.005, color=(1, 0, 0), scale_factor=2,
+                                  figure=fig2, resolution=256)
+                    nei.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    nei.glyph.glyph_source.glyph_source.theta_resolution = 32
+                    total.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    total.glyph.glyph_source.glyph_source.theta_resolution = 32
+                    key.glyph.glyph_source.glyph_source.phi_resolution = 32
+                    key.glyph.glyph_source.glyph_source.theta_resolution = 32
+                # mlab.show()
+                return fig2
 
     def generate_r_neighbor(self, range_rate=0.05, show_result=False, use_dificiency=False):
         """
@@ -1093,18 +1152,17 @@ class PointCloud:
         # 用点云减去最小坐标再除以体素尺寸，得到的nx3为xyz方向上以体素尺寸为单位长度的坐标(浮点数)
         float_index = (self.position - distance_min) / Voxel_Size
         for i in range(len(float_index)):  # 对每个点
-            sequence = str(math.ceil(float_index[i][0]))+str(math.ceil(float_index[i][1]))+\
+            position = str(math.ceil(float_index[i][0]))+str(math.ceil(float_index[i][1]))+\
                        str(math.ceil(float_index[i][2]))  # 计算这个点在体素空间中的位置
-            if sequence in ranking_set:
-                if Importance_Ranking[i] > ranking_set[sequence][0]:
-                    ranking_set[sequence] = [Importance_Ranking[i], i]
+            if position in ranking_set:
+                if Importance_Ranking[i] > ranking_set[position][0]:
+                    ranking_set[position] = [Importance_Ranking[i], i]
                  #   print('updates points')
                # print('rejecting points')
             else:
-                ranking_set[sequence] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
+                ranking_set[position] = [Importance_Ranking[i], i]  # 如果字典里面没有这个体素，则需要新建一个该体素的键，然后将【重要度，索引】存进去
         if len(ranking_set) < Sampled_Number:
-            print("The value of Voxel_Size is too large and needs to be reduced!!!")
-            raise ValueError
+            raise ValueError("The value of Voxel_Size is too large and needs to be reduced!!!")
         sample_sequence = np.zeros(shape=[len(ranking_set), 2])
         for i, j in enumerate(ranking_set):
             sample_sequence[i, :] = ranking_set[j]  # 字典里面每个键都是一个列表，保存的是一个体素内所有点的重要度，取最大的生成一个列表
@@ -1163,7 +1221,8 @@ class PointCloud:
             mlab.points3d(self.position[:, 0], self.position[:, 1], self.position[:, 2],
                           self.position[:, 2] * 10 ** -9 + self.range * 0.005,
                           color=(0, 1, 0), scale_factor=1.5)
-            mlab.show()
+            # mlab.show()
+            return fig2
 
         if show_saliency:
             fig3 = mlab.figure(size=(1000, 1000), bgcolor=(1, 1, 1))
@@ -1656,10 +1715,10 @@ if __name__ == "__main__":
     # mlab.show()
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
     f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
-    print(f_list)
-    # for j, i in enumerate(f_list):
-    #     pc = PointCloud(i)
-    #     pc.down_sample(number_of_downsample=4096)
+    for j, i in enumerate(f_list):
+        if j < 4:
+            pc = PointCloud(i)
+
     #     f1 = pc.compute_feature(method='ball')
     #     np.savetxt('f1_'+str(j+1)+'.csv', f1)
     #     f2 = pc.compute_feature(method='knn')
