@@ -9,6 +9,7 @@ import time
 import os
 import sys
 import tf_util
+import random
 from sklearn import preprocessing
 from show_samples import plotit
 import show_pc
@@ -54,7 +55,7 @@ pc_label = readh5['train_labels'][:]
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
 quaternion_range = [0, 0.5]
-translation_range = [-5, 5]
+translation_range = [-100, 100]
 
 pc_tile *= 100   # for scale
 
@@ -325,8 +326,8 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     """
     readh5 = h5py.File(pcpath)  # file path
 
-    pc_tile = readh5['test_set'][:]  # 20000 * 1024 * 3
-    pc_local_eigs = readh5['test_set_local'][:]  # 20000 * 102 * 9
+    pc_tile = readh5['test_set'][:]  # m * 1024 * 3
+    pc_local_eigs = readh5['test_set_local'][:]  # m * 102 * 9
     pc_label = readh5['test_labels'][:]
     pc_tile *= 100
     tf.reset_default_graph()
@@ -440,9 +441,32 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         opc += rand_trans
         rpc += rand_trans
 
-        show_pc.show_trans(mpc, rpc, colorset=colorset, scale=2)  # simulate the ramdon
+        fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=100, returnfig=True)  # simulate the ramdon
 
-        show_pc.show_trans(opc, rpc, colorset=colorset, scale=2)
+        filename1='before1.png'
+        while(True):
+            if os.path.exists(filename1):
+                filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
+                continue
+            break
+        f = mlab.gcf()  # this two line for mlab.screenshot to work
+        f.scene._lift()
+        mlab.savefig(filename=filename1)
+        mlab.close()
+
+        fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=100, returnfig=True)  # after recover
+
+        filename1='after1.png'
+        while(True):
+            if os.path.exists(filename1):
+                filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
+                continue
+            break
+        f = mlab.gcf()  # this two line for mlab.screenshot to work
+        f.scene._lift()
+        mlab.savefig(filename=filename1)
+        mlab.close()
+
 
     if vis_feature:
         print('points and values:', points, 'shapes', np.shape(points))
@@ -1121,9 +1145,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="object8_3.ckpt", use_local=True)
+    train(model_name="object8_4.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "object8_3.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
+    # inference(os.path.join('tmp', "object8_3.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()
