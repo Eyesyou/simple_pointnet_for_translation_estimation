@@ -11,6 +11,7 @@ from show_pc import PointCloud
 from open3d import *
 import matplotlib.pyplot as plt
 
+
 class OctNode:
     def __init__(self, coordinates, size, data=None):
         assert isinstance(coordinates, np.ndarray)
@@ -28,6 +29,7 @@ class OctNode:
         self.dfr = None
         self.children = [self.ubl, self.ubr, self.ufl, self.ufr, self.dbl, self.dbr, self.dfl, self.dfr]
 
+
 def timeit(method):
     def timed(*args, **kw):
         ts = time.time()
@@ -40,7 +42,6 @@ def timeit(method):
             print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
         return result
     return timed
-
 
 
 # readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/train_set4noiseout/project_data.h5', 'r')  # file path

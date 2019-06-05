@@ -641,7 +641,7 @@ class PointCloud:
         """
 
         inds = np.random.choice(np.arange(self.nb_points), size=int(factor * self.nb_points))
-        self.position[inds] = self.center + -self.range / 2 + self.range / 1 * np.random.random(size=(len(inds), 3))
+        self.position[inds] = self.center + -self.range / 6 + self.range / 3 * np.random.random(size=(len(inds), 3))
 
     def normalize(self):
         self.position -= self.center
@@ -853,7 +853,7 @@ class PointCloud:
 
             mlab.show()
 
-    def generate_k_neighbor(self, k=10, show_result=False):
+    def generate_k_neighbor(self, k=10, show_result=False, colorset=np.random.random((100, 3))):
         """
         compute k nearest points for every point
         :param k:
@@ -867,7 +867,6 @@ class PointCloud:
         self.point_kneighbors = np.transpose(idx)  # n x k
 
         if show_result:
-            colorset = np.random.random((100, 3))
 
             if self.keypoints is not None:
                 print('key points already exist, plot them now')

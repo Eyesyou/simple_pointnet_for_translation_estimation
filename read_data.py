@@ -85,23 +85,6 @@ def read_data(h5_path=''):
     return readh5
 
 
-class OctNode:
-    def __init__(self, coordinates, size, data=None):
-        assert isinstance(coordinates, np.ndarray)
-        assert np.squeeze(coordinates).shape == (3,)
-        self.position = coordinates
-        self.size = size
-        self.data = data  # the points in this node, nx3 np array
-        self.ubl = None  # up back left node
-        self.ubr = None  # up back right node
-        self.ufl = None  # up front left node
-        self.ufr = None
-        self.dbl = None
-        self.dbr = None
-        self.dfl = None
-        self.dfr = None
-        self.children = [self.ubl, self.ubr, self.ufl, self.ufr, self.dbl, self.dbr, self.dfl, self.dfr]
-
 
 def sample_txt_pointcloud(pc1, pc2, pc3, pc4, n=1024, save_path=''):
     pc1 = np.loadtxt(pc1)

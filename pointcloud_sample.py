@@ -6,22 +6,7 @@ import time
 
 path = os.getcwd()
 
-#打开点云文件，将数据存进数组data nx3
-file = open(path + "//lingjian2.txt", 'r')
-s = file.readline()
-data = []
-while s:
-    s = s.split()
-    s = [float(x) for x in s]
-    data.append(s)
-    s = file.readline()
-file.close()
-data = np.array(data)
-print(data.shape)
 
-#随机生成重要度
-Importance_Ranking = list(range(0, len(data), 1))
-np.random.shuffle(Importance_Ranking)
 
 def resolution_kpts(Pointcloud, Importance_Ranking, Voxel_Size, Sampled_Number):
     """
@@ -63,16 +48,6 @@ def resolution_kpts(Pointcloud, Importance_Ranking, Voxel_Size, Sampled_Number):
         ind[k] = int(sample_sequence[k, 1])
     return sampled_pointcloud, ind
 
-start_time = time.clock()
-for i in range(5):
-    sampled_data,_ = resolution_kpts(data, Importance_Ranking, 1, 102)
-end_time = time.clock()
-average_time = (end_time-start_time)/5
-print(average_time)
-f = open("result2.txt", 'w')
-for num in range(len(sampled_data)):
-    f.write(str(sampled_data[num, 0]) + " " + str(sampled_data[num, 1]) + " " + str(sampled_data[num, 2]) + "\n")
-f.close()
 
 
 

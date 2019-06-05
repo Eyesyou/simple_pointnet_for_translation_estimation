@@ -249,28 +249,29 @@ def knn_plot(pc_path=''):
         if j < 4:
             pc = PointCloud(i)
             pc.down_sample(number_of_downsample=4096)
-
+            pc.add_noise(factor=0.04)
+            pc.add_outlier(factor=0.02)
             fig = pc.compute_key_points(percentage=0.02, resolution_control=1/15, rate=0.05, use_deficiency=False,show_result=True) # get the key points id
 
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             mlab.savefig(filename=str(j) + '_0.png')
             mlab.close()
-
-            fig = pc.generate_k_neighbor(k=32, show_result=True)
+            colorset = np.random.random((100, 3))
+            fig = pc.generate_k_neighbor(k=32, show_result=True, colorset=colorset)
 
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             mlab.savefig(filename=str(j) + '_1.png')
             mlab.close()
 
-            fig = pc.generate_k_neighbor(k=64, show_result=True)
+            fig = pc.generate_k_neighbor(k=64, show_result=True, colorset=colorset)
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             mlab.savefig(filename=str(j) + '_2.png')
             mlab.close()
 
-            fig = pc.generate_k_neighbor(k=128, show_result=True)
+            fig = pc.generate_k_neighbor(k=128, show_result=True, colorset=colorset)
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             mlab.savefig(filename=str(j) + '_3.png')
@@ -319,4 +320,13 @@ if __name__ == "__main__":
     # vis_first_layer(pc, layer, vis_rate=1/10)
     # feature_mean_deviation('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.02noise/lab1')
     base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
-    knn_plot(pc_path=base_path)
+    f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
+    for j,i in enumerate(f_list):
+        if j <4:
+            pc = PointCloud(i)
+            pc.down_sample(number_of_downsample=20000)
+            fig = pc.show(not_show=True, scale=0.4)
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=str(j) + '_2.png')
+            mlab.close()
