@@ -216,7 +216,6 @@ def train(model_name, use_local=False):
             pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay, use_local=use_local)
 
             loss = get_loss(pred, labels_pl, end_points, rotation_weight=1, pose_weight=10**9)
-            #loss = get_transloss(pred, end_points)s
 
             tf.summary.scalar('loss', loss)
 
@@ -701,11 +700,6 @@ def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, p
 
     return final_loss
 
-
-def get_transloss(pred, end_points, rotation_regweight = 10):
-    trans_diff = rotation_regweight * end_points['trans_dis'][0] + end_points['trans_dis'][1]
-
-    return trans_diff
 
 
 def placeholder_inputs(batch_size, num_point):
