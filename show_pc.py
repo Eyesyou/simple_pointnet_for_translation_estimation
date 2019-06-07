@@ -125,7 +125,7 @@ def show_all(point_cloud, color=None, plot_plane=False, plot_arrow=True):
     # plt.show()
 
 
-def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4):
+def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4, returnfig=False):
     """
         plot a batch of point clouds
     :param point_cloud1: Bx1024x3 point_cloud2: Bx1024x3 np array
@@ -135,16 +135,15 @@ def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4
     :param scale:
     :return: nothing
     """
-
+    B = point_cloud1.shape[0]  # batch
     a1, b1, c1 = point_cloud1[:, :, 0], point_cloud1[:, :, 1], point_cloud1[:, :, 2]  # Bxnx1
-    a1, b1, c1 = np.squeeze(a1), np.squeeze(b1), np.squeeze(c1)  # Bxn
+    a1, b1, c1 = np.reshape(a1, (B, -1)), np.reshape(b1, (B, -1)), np.reshape(c1, (B, -1))  # Bxn
     a2, b2, c2 = point_cloud2[:, :, 0], point_cloud2[:, :, 1], point_cloud2[:, :, 2]  # Bxnx1
-    a2, b2, c2 = np.squeeze(a2), np.squeeze(b2), np.squeeze(c2)  # Bxn
+    a2, b2, c2 = np.reshape(a2, (B, -1)), np.reshape(b2, (B, -1)), np.reshape(c2, (B, -1))  # Bxn
 
     ax = plt.subplot(111, projection='3d', facecolor='w')
-    mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+    fig = mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
     ax.set_axis_off()
-    B = point_cloud1.shape[0] #batch
 
     dark_multiple = 2.5   # greater than 1
     for idx, i in enumerate(colorset):
@@ -169,7 +168,10 @@ def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4
 
     Axes3D.grid(ax, b=False)
     if use_mayavi:
-        mlab.show()
+        if returnfig:
+            return fig
+        else:
+            mlab.show()
     else:
         plt.show()
 
@@ -641,7 +643,7 @@ class PointCloud:
         """
 
         inds = np.random.choice(np.arange(self.nb_points), size=int(factor * self.nb_points))
-        self.position[inds] = self.center + -self.range / 2 + self.range / 1 * np.random.random(size=(len(inds), 3))
+        self.position[inds] = self.center + -self.range / 6 + self.range / 3 * np.random.random(size=(len(inds), 3))
 
     def normalize(self):
         self.position -= self.center
@@ -853,7 +855,7 @@ class PointCloud:
 
             mlab.show()
 
-    def generate_k_neighbor(self, k=10, show_result=False):
+    def generate_k_neighbor(self, k=10, show_result=False, colorset=np.random.random((100, 3))):
         """
         compute k nearest points for every point
         :param k:
@@ -867,7 +869,6 @@ class PointCloud:
         self.point_kneighbors = np.transpose(idx)  # n x k
 
         if show_result:
-            colorset = np.random.random((100, 3))
 
             if self.keypoints is not None:
                 print('key points already exist, plot them now')
