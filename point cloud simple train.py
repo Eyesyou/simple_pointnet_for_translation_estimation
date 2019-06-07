@@ -215,8 +215,8 @@ def train(model_name, use_local=False):
             # Get model_prediction and loss here end_points stores the transformation
             pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay, use_local=use_local)
 
-            loss = get_loss(pred, labels_pl, end_points)
-            #loss = get_transloss(pred, end_points)
+            loss = get_loss(pred, labels_pl, end_points, rotation_weight=1, pose_weight=10**9)
+            #loss = get_transloss(pred, end_points)s
 
             tf.summary.scalar('loss', loss)
 
@@ -664,26 +664,40 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     return prediction, end_points #net is the final prediction of 4 classes
 
 
-def get_loss(pred, label, end_points, reg_weight=0.001, rotation_weight=1000, pose_weight=10):
-    """ pred: B*NUM_CLASSES,
-        label: B, """
+def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, pose_weight=10):
+    """
+
+    :param pred: B*NUM_CLASSES,
+    :param label: B,
+    :param end_points: some loss
+    :param reg_weight: regularization term, not a big deal
+    :param rotation_weight: weight for quaternion
+    :param pose_weight: balance between pose and classification
+    :return:
+    """
+
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=label)   # pred:(Bx4) label:(B,),loss:(B,),originally logits = label, label=pred
     classify_loss = tf.reduce_mean(loss)   # you need mean
     tf.summary.scalar('classify loss', classify_loss)
 
     # Enforce the transformation as orthogonal matrix
-    transform = end_points['transform']  # BxKxK the feature transformation
-    K = transform.get_shape()[1].value  # K=4
+    transform = end_points['transform']  # BxKxK the feature transformation, did not used it anymore
+    K = transform.get_shape()[1].value  # K=64
 
-    mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1])) # BxKxK
+    mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1]))  # BxKxK
     mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
     mat_diff_loss = tf.nn.l2_loss(mat_diff)  # the difference with identity matrix
 
     trans_diff = rotation_weight * end_points['trans_dis'][0] + end_points['trans_dis'][1]  # rotation and translation
 
     tf.summary.scalar('mat loss', mat_diff_loss)
-    final_loss = tf.add(classify_loss, mat_diff_loss * reg_weight)
-    final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")   # if trans_diff * 0.0 means end-to-end trainning
+
+    if pose_weight > 100000:
+        final_loss = trans_diff
+    else:
+
+        final_loss = tf.add(classify_loss, mat_diff_loss * reg_weight)
+        final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")   # if trans_diff * 0.0 means end-to-end trainning
 
     return final_loss
 
@@ -1005,7 +1019,7 @@ def compute_pos_distance(batch_pos1, batch_pos2):
 
     angle_dis = tf.minimum(tf.sqrt(tf.reduce_sum(tf.square(inv_quat_pos1[:, 0:4] - batch_pos2[:, 0:4]), axis=1)),
                            tf.sqrt(tf.reduce_sum(tf.square(inv_quat_pos1[:, 0:4] + batch_pos2[:, 0:4]),
-                                                 axis=1)))  # (8, 0) todo, minimum should be taken for every one in the batch
+                                                 axis=1)))  # (B, 0) todo, minimum should be taken for every one in the batch
 
     pos_dis = tf.sqrt(tf.reduce_sum(tf.square(inv_quat_pos1[:, 4:7]-batch_pos2[:, 4:7]), axis=1))
 
