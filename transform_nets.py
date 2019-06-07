@@ -69,6 +69,7 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     :param point_cloud:   Input (XYZ) Transform Net, input is BxNx3
     :param point_cloud_local:
     :param is_training:
+    :param bn_decay: batch normalization decay
     :param use_local:
     :return: Transformation matrix of size BX7 ,K=3 in ordinary
     """
@@ -145,15 +146,9 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
         point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 2048, activation=tf.nn.relu)
-        point_cloud_local = tf.layers.dense(point_cloud_local, 1024, activation=tf.nn.relu)
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 1, -1])  # b x nb_key_pts x 1 x 1024
 
@@ -163,11 +158,16 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 1024
         net = tf.concat([net, point_cloud_local], axis=-1)  # b x 1024
 
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net = tf.layers.dense(net, 512, activation=tf.nn.relu)  # BX128
-
-    transform_7 = tf.layers.dense(net, 7)
-
+    intersection = tf.layers.dense(net, 512, activation=tf.nn.relu)
+    net_q = tf.layers.dense(intersection, 256, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 128, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 64, activation=tf.nn.relu)  # BX64
+    net_t = tf.layers.dense(intersection, 256, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 128, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 64, activation=tf.nn.relu)
+    quaternion = tf.layers.dense(net_q, 4)
+    translation = tf.layers.dense(net_t, 3)
+    transform_7 = tf.concat([quaternion, translation], axis=1)
     #reshape = tf.reshape(net, (batch_size, 1024*3)) # B x (1024*3)
     #transform_7 = tf.matmul(reshape, 1*tf.ones((1024*3, 7))) #1024*3 x 7
 
