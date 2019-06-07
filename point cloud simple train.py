@@ -541,7 +541,6 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
     end_points['predict_pos'] = transformation_7
     transformation = tf_quat_pos_2_homo(transformation_7)  # Bx4x4
-    #transformation_test = point_cloud
 
     end_points['compare'] = [transformation_7, ran_pos]  # compare the predicted transformation and ground true transformation
     end_points['trans_dis'] = compute_pos_distance(transformation_7, ran_pos)  # add by asy, to compute the distance between predict and ground truth
@@ -550,8 +549,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     tf.summary.scalar('pos_dis', end_points['trans_dis'][1])
 
     point_cloud_transformed = apply_homo_to_pc(point_cloud_jitterd, transformation)  # apply this for shape transformation.
-    # point_cloud_transformed = point_cloud_jitterd                                    # what if you don't apply this
-    #return point_cloud_transformed,
+    # point_cloud_transformed = point_cloud_jitterd                                    # if you don't apply this
 
     end_points['test_layer1'] = point_cloud              # original point cloud
     end_points['test_layer2'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
