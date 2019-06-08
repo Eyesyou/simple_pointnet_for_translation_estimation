@@ -442,7 +442,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
     if show_result:
-        rand_trans = np.random.random([test_batchsize, 3])*200   # todo manually ajust the translation range
+        rand_trans = np.random.random([test_batchsize, 3])*0   # todo manually ajust the translation range
         rand_trans = np.expand_dims(rand_trans, axis=1)
         rand_trans = np.tile(rand_trans, [1, 1024, 1])
 
@@ -451,7 +451,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
 
         fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=100, returnfig=True)  # simulate the ramdon
 
-        filename1='before1.png'
+        filename1='before_alignment1.png'
         while(True):
             if os.path.exists(filename1):
                 filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
@@ -464,7 +464,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
 
         fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=100, returnfig=True)  # after recover
 
-        filename1='after1.png'
+        filename1='after_alignment1.png'
         while(True):
             if os.path.exists(filename1):
                 filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
