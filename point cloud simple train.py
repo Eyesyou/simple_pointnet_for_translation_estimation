@@ -44,6 +44,7 @@ max_epoch = 100  # 200
 nb_classes = 8
 nb_points = 1024
 key_pts_percentage = 0.1
+pc_scale_factor = 100
 # tile_size = 256   # total
 
 readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/simu_data.h5')  # file path
@@ -57,7 +58,7 @@ pc_test = PointCloud(pc_test)
 quaternion_range = [0, 0.5]
 translation_range = [-100, 100]
 
-pc_tile *= 100   # for scale
+pc_tile *= pc_scale_factor   # for scale
 
 # <editor-fold desc="use this snipet to make">
 # for i in range(pc_tile.shape[0]):
@@ -323,12 +324,20 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     :param test_batchsize:
     :return:
     """
-    readh5 = h5py.File(pcpath)  # file path
 
-    pc_tile = readh5['test_set'][:]  # m * 1024 * 3
-    pc_local_eigs = readh5['test_set_local'][:]  # m * 102 * 9
-    pc_label = readh5['test_labels'][:]
-    pc_tile *= 100
+    try:
+        readh5 = h5py.File(pcpath)  # file path
+        pc_tile = readh5['test_set'][:]  # m * 1024 * 3
+        pc_local_eigs = readh5['test_set_local'][:]  # m * 102 * 9
+        pc_label = readh5['test_labels'][:]
+        pc_tile *= pc_scale_factor
+    except:
+        log_string('TEST SET NOT FOUND, USING TRAINING SET TO PLOT NOW!!!')
+        global readh5
+        global pc_tile
+        global pc_local_eigs
+        global pc_label
+
     tf.reset_default_graph()
 
     print('test_batchsize is :', test_batchsize)
@@ -1151,9 +1160,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object8_4.ckpt", use_local=True)
+    # train(model_name="object8_4.ckpt", use_local=True)
 
-    # inference(os.path.join('tmp', "object8_3.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
+    inference(os.path.join('tmp', "object8_5.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()
