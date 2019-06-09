@@ -47,7 +47,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types
                     pc_tile[j, :, :] = expand
                     # print('*****************************************')
                     # print('reading point cloud cost time:{}'.format(t1 - t0))
-                    pc_key_eig = get_local_eig_np(expand)   # 1 x nb_keypoints x 9
+                    pc_key_eig = get_local_eig_np(expand, useiss=False)   # 1 x nb_keypoints x 9
 
                     # print('*****************************************')
                     # print('get local cost time:{}'.format(t2 - t1))
@@ -362,7 +362,7 @@ def get_local_eig(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0
     return concat
 
 
-def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2, 0.3)):
+def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.05, 0.1, 0.2), useiss=True):
     """
     three scale of neighbor by default is choose.
     :param point_cloud:   Bxnx3  np array
@@ -379,8 +379,6 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     max_limit = np.max(point_cloud, axis=1)  # Bx3
     pts_range = max_limit - min_limit  # Bx3
     pts_range = np.sqrt(np.sum(np.square(pts_range), axis=1, keepdims=True))  # Bx1
-    multi_radius = pts_range * radius_scale  # Bx3
-    # print('multi_radius :', multi_radius)
 
     max_nb_nei_pts = [0, 0, 0]
 
@@ -388,32 +386,20 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     for i in range(batchsize):
         pc = np.squeeze(point_cloud[i])
         pc = PointCloud(pc)
-        pc.generate_r_neighbor(range_rate=0.05)
+        pc.generate_r_neighbor(range_rate=radius_scale[0])
         idx1 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(range_rate=0.1)
+        pc.generate_r_neighbor(range_rate=radius_scale[1])
         idx2 = pc.point_rneighbors  # n x ?
-        pc.generate_r_neighbor(range_rate=0.2)
+        pc.generate_r_neighbor(range_rate=radius_scale[2])
         idx3 = pc.point_rneighbors  # n x ?
         current = (idx1.shape[1], idx2.shape[1], idx3.shape[1])
 
         max_nb_nei_pts = np.max(np.asarray([max_nb_nei_pts, current]), axis=0)
 
-        """
-        pc = np.squeeze(point_cloud[i])
-        kdtree = spatial.KDTree(pc)
-        idx1 = kdtree.query_ball_point(pc, multi_radius[i, 0])
-        idx2 = kdtree.query_ball_point(pc, multi_radius[i, 1])
-        idx3 = kdtree.query_ball_point(pc, multi_radius[i, 2]) 
-        print('c length:', idx1.__len__())
-        length1 = len(max(idx1, key=len))
-        length2 = len(max(idx2, key=len))
-        length3 = len(max(idx3, key=len))
-        current = (length1, length2, length3)
-        max_nb_nei_pts = np.max(np.asarray([max_nb_nei_pts, current]), axis=0)
-        print('max_nb:', max_nb_nei_pts)
-    """
     np_arr1 = np.empty((batchsize, nb_points, max_nb_nei_pts[0]))  # b x n x l1 store the index of neighbor points.
+
     np_arr2 = np.empty((batchsize, nb_points, max_nb_nei_pts[1]))  # b x n x l2
+
     np_arr3 = np.empty((batchsize, nb_points, max_nb_nei_pts[2]))  # b x n x l3
 
     np_arr1[:] = np.nan
@@ -428,9 +414,10 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
         pc.generate_r_neighbor(range_rate=0.1)
         idx2 = pc.point_rneighbors  # n x ?
         pc.generate_r_neighbor(range_rate=0.2)
+        idx3 = pc.point_rneighbors
 
         for j, k in enumerate(idx1):
-            np_arr1[i][j][0:len(k)] = k
+            np_arr1[i][j][0:len(k)] = k  # k is the neighbor idx array
         for j, k in enumerate(idx2):
             np_arr2[i][j][0:len(k)] = k
         for j, k in enumerate(idx3):
@@ -453,7 +440,9 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
         _, idx[i, :] = resolution_kpts(pc.position, eigen_val[i, :, 0], pc.range/40, nb_key_pts)
 
     # print(eigen_val[idx])
+
     key_idx = idx[:, 0:nb_key_pts].astype(int)
+
 
     # print('key points coordinates:', point_cloud[idx, :], 'shape:', point_cloud[idx, :].shape)
     # b_dix = np.indices((batchsize, nb_key_pts))[1]  # b x nb_key
@@ -461,8 +450,58 @@ def get_local_eig_np(point_cloud, key_pts_percentage=0.1, radius_scale=(0.1, 0.2
     # batch_idx = np.concatenate([np.expand_dims(b_dix, axis=-1), np.expand_dims(idx, axis=-1)], axis=-1)  # b x nb_key x 2
 
     key_eig_val = np.empty((batchsize, nb_key_pts, 3))  # b x nb_keypoints x 3
-    for i in range(batchsize):
-        key_eig_val[i, :, :] = eigen_val[i, key_idx[i, :], :]
+    if useiss:
+        for i in range(batchsize):
+            key_eig_val[i, :, :] = eigen_val[i, key_idx[i, :], :]
+    else:  # use my key pts detection method
+        for i in range(batchsize):
+            pc = PointCloud(point_cloud[i, :])
+            keyptspos = pc.region_growing()  # nb_keypts x 3
+
+            # generate r neighbor for key points
+            r = pc.range * radius_scale[1]
+            p_distance = distance.cdist(keyptspos, pc.position)   # nb_keypts x n
+            idx = np.where((p_distance < r) & (p_distance > 0))  # idx is a list of two array
+
+            _, uni_idx, nb_points_with_neighbors = np.unique(idx[0], return_index=True, return_counts=True)
+            assert len(nb_points_with_neighbors) == nb_key_pts  # every key point has to have neighbors
+
+            maxnb_points_of_neighbors = np.max(nb_points_with_neighbors)
+
+            keypoint_rneighbors = np.empty((nb_key_pts, maxnb_points_of_neighbors))  # n x ?
+            keypoint_rneighbors[:] = np.nan
+            k = 0
+            for m in range(nb_key_pts):
+                for j in range(nb_points_with_neighbors[m]):  # every key point has different nb of neighbor
+                    keypoint_rneighbors[idx[0][uni_idx[m]], j] = idx[1][k].astype(np.int32)
+                    k += 1
+
+            # compute covariance for key points
+            whole_weight = 1 / (~np.isnan(pc.point_rneighbors)).sum(1)  # do as ISS paper said, np array (102,)
+            whole_weight[whole_weight == np.inf] = 1  # avoid divided by zero
+            # todo: this is an inefficient way
+            #  to delete nan effect, so to implement weighted covariance_mat as ISS feature.
+            cov = np.empty((nb_key_pts, 3, 3))
+            cov[:] = np.nan
+            for ii in range(nb_key_pts):  # for every key points
+                idx_this_pts_neighbor = keypoint_rneighbors[ii, :][~np.isnan(keypoint_rneighbors[ii, :])].astype(np.int)
+                assert idx_this_pts_neighbor.shape[0] > 0  # every key point has to have neighbors
+                if idx_this_pts_neighbor.shape[0] > 0:
+
+                    weight = np.append(whole_weight[ii], whole_weight[idx_this_pts_neighbor])  # add this point
+
+                    neighbor_pts = np.append(pc.position[np.newaxis, ii, :],
+                                             pc.position[idx_this_pts_neighbor], axis=0)  # (?+1) x 3 coordinates
+
+                    try:
+                        cov[ii, :, :] = np.cov(neighbor_pts, rowvar=False, ddof=0, aweights=weight)  # 3 x 3
+                    except:
+                        print('this point:', pc.position[ii], 'neighbor_pts:', neighbor_pts, 'aweights:', weight)
+
+                else:
+                    cov[ii, :, :] = np.eye(3)
+
+                key_eig_val[i, ii, :], _ = np.linalg.eigh(cov[ii, :, :])  # b x nb_keypoints x 3
 
     np_key_arr1 = np.empty((batchsize, nb_key_pts, np_arr1.shape[2]))                                     # np_arr1: b x n x nei1  to  b x  nb_key x  nei1
     np_key_arr3 = np.empty((batchsize, nb_key_pts, np_arr3.shape[2]))
@@ -643,8 +682,8 @@ def scene_seg_dataset(pc_path, save_path, samples=1000, max_nb_pc=5, show_result
 
 
 if __name__ == "__main__":
-    #save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/simu_data.h5',
-    #        base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04', n=5, nb_types=8)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/mykeyptssimu_data.h5',
+            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04', n=5, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -664,10 +703,10 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    for i in range(1, 9):
-        augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i),
-                      pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i)+'/final.ply',
-                      add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
+    #for i in range(1, 9):
+    #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i),
+    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i)+'/final.ply',
+    #                  add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
