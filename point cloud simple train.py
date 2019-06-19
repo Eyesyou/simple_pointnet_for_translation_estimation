@@ -47,7 +47,7 @@ key_pts_percentage = 0.1
 pc_scale_factor = 100
 # tile_size = 256   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/simu_data.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/mykeyptssimuN_data.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
@@ -216,7 +216,7 @@ def train(model_name, use_local=False):
             # Get model_prediction and loss here end_points stores the transformation
             pred, end_points = get_model(pointclouds_pl, pt_local_eigs_pl, is_training_pl, bn_decay=bn_decay, use_local=use_local)
 
-            loss = get_loss(pred, labels_pl, end_points, rotation_weight=1, pose_weight=10**9)
+            loss = get_loss(pred, labels_pl, end_points)
 
             tf.summary.scalar('loss', loss)
 
@@ -1160,9 +1160,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="object8_4.ckpt", use_local=True)
+    train(model_name="object8_6my.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "object8_5.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
+    # inference(os.path.join('tmp', "object8_5.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

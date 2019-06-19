@@ -682,8 +682,8 @@ def scene_seg_dataset(pc_path, save_path, samples=1000, max_nb_pc=5, show_result
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04/mykeyptssimu_data.h5',
-            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8objectbighalf0.04', n=5, nb_types=8)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/mykeyptssimu_data.h5',
+            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise', n=5000, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
