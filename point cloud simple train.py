@@ -32,14 +32,14 @@ LOG_FOUT = open('log_train.txt', 'w')
 # pc[2048:3072] += ran_trans[2, :]
 # pc[3072:4096] += ran_trans[3, :]
 # pc = np.reshape(pc, (4, 1024, 3))
-
+# tf.enable_eager_execution()
 init_learning_rate = float(10 ** -np.random.randint(-1, 8) * np.random.random(1))
 init_learning_rate = 0.0002
 decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
 decay_rate = 0.999
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
-batchsize = 100
+batchsize = 8
 max_epoch = 100  # 200
 nb_classes = 8
 nb_points = 1024
@@ -47,7 +47,7 @@ key_pts_percentage = 0.1
 pc_scale_factor = 100
 # tile_size = 256   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/mykeyptssimuN_data.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/real_single_1024.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
 pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
@@ -56,7 +56,7 @@ pc_label = readh5['train_labels'][:]
 pc_test = pc_tile[0, :, :]
 pc_test = PointCloud(pc_test)
 quaternion_range = [0, 0.5]
-translation_range = [-100, 100]
+translation_range = [-150, 150]
 
 pc_tile *= pc_scale_factor   # for scale
 
@@ -202,6 +202,16 @@ def get_pts_cov(pc, pts_r_neirhbor_idx):
 
 def train(model_name, use_local=False):
     with tf.Graph().as_default():
+        # <editor-fold desc="Create a session and some configuration about that session">
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        config.allow_soft_placement = True
+        config.log_device_placement = False
+        sess = tf.Session(config=config)
+
+        # saver.restore(sess, "/log/model.ckpt")  # if you want to load model
+
+        # </editor-fold>
         with tf.device('/gpu:0'):
             pointclouds_pl, labels_pl = placeholder_inputs(batchsize, nb_points)  # batch, num_points
             pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(batchsize, int(nb_points*0.1), 9))
@@ -252,16 +262,7 @@ def train(model_name, use_local=False):
 
             # Add ops to save and restore all the variables.
             saver = tf.train.Saver()
-        # <editor-fold desc="Create a session and some configuration about that session">
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        config.allow_soft_placement = True
-        config.log_device_placement = False
-        sess = tf.Session(config=config)
 
-        # saver.restore(sess, "/log/model.ckpt")  # if you want to load model
-
-        # </editor-fold>
         # Add summary writers
         # merged = tf.merge_all_summaries()
         train_summary_merged = tf.summary.merge_all()
@@ -282,8 +283,10 @@ def train(model_name, use_local=False):
                'step': batch,
                'trans_dis': end_points['trans_dis'],
                'compare': end_points['compare'],
-               'original_pc': end_points['test_layer1'],
-               'recovered_pc': end_points['test_layer2']
+               'original_pc': end_points['opc'],
+               'recovered_pc': end_points['rpc'],
+               'test_layer1':end_points['test_layer1'],
+               'test_layer2':end_points['test_layer2']
                }
 
         # tvars = tf.all_variables()
@@ -379,8 +382,8 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
            'step': tf.Variable(initial_value=np.ones(shape=1)),   # TODO
            'trans_dis': end_points['trans_dis'],
            'compare':  end_points['compare'],
-           'original_pc': end_points['test_layer1'],
-           'recovered_pc': end_points['test_layer2'],
+           'original_pc': end_points['opc'],
+           'recovered_pc': end_points['rpc'],
            'moved_pc': end_points['moved_pc'],
            'random_pos': end_points['random_pos'],
            'predict_pos': end_points['predict_pos'],
@@ -404,7 +407,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             # pc_local_eigs = get_local_eig_np(points)   # todo once define pc_local_eigs here,pc_tile becomes local variable
 
         rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
-
+        rand_idx = np.array((j, ))
         tsne_label[j] = pc_label[rand_idx]  # (b, )
         point_clouds[j] = pc_tile[rand_idx, :, :]  # (b x nb_points x 3)
         feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
@@ -441,40 +444,41 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
         #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
 
-    if show_result:
-        rand_trans = np.random.random([test_batchsize, 3])*0   # todo manually ajust the translation range
-        rand_trans = np.expand_dims(rand_trans, axis=1)
-        rand_trans = np.tile(rand_trans, [1, 1024, 1])
+        if show_result:
+            # rand_trans = np.random.random([test_batchsize, 3])*0   # todo manually ajust the translation range
+            # rand_trans = np.expand_dims(rand_trans, axis=1)
+            # rand_trans = np.tile(rand_trans, [1, 1024, 1])
+            # 
+            # opc += rand_trans
+            # rpc += rand_trans
 
-        opc += rand_trans
-        rpc += rand_trans
+            fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=100, returnfig=True)  # simulate the ramdon
 
-        fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=100, returnfig=True)  # simulate the ramdon
+            filename1 = 'before_alignment1.png'
+            while(True):
+                if os.path.exists(filename1):
+                    filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
+                    continue
+                break
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=filename1)
+            print('before image saved')
+            mlab.close()
 
-        filename1='before_alignment1.png'
-        while(True):
-            if os.path.exists(filename1):
-                filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
-                continue
-            break
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        mlab.savefig(filename=filename1)
-        mlab.close()
+            fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=100, returnfig=True)  # after recover
 
-        fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=100, returnfig=True)  # after recover
-
-        filename1='after_alignment1.png'
-        while(True):
-            if os.path.exists(filename1):
-                filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
-                continue
-            break
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        mlab.savefig(filename=filename1)
-        mlab.close()
-
+            filename1='after_alignment1.png'
+            while(True):
+                if os.path.exists(filename1):
+                    filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
+                    continue
+                break
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            mlab.savefig(filename=filename1)
+            print('after image saved')
+            mlab.close()
 
     if vis_feature:
         print('points and values:', points, 'shapes', np.shape(points))
@@ -491,6 +495,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         np.save('tsne_label.npy', tsne_label)
         np.save('point_clouds.npy', point_clouds)
         # plot_embedding_3d(classification_output4tsne, tsne_label, point_clouds=point_clouds)
+
 
 def get_bn_decay(batch):
     # ofr batch decay
@@ -523,7 +528,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     # point_cloud=zero_center_and_norm(point_cloud)  #zero_center and then normalize the input features,
     # need to fix: normalize all the axis with same coifficent
     # generate random_pose once here
-    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=0.99, maxval=1),
+    ran_pos = tf.concat([tf.random_uniform([batch_size, 1], minval=0.9, maxval=1),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
                          tf.random_uniform([batch_size, 1], minval=quaternion_range[0], maxval=quaternion_range[1]),
@@ -545,13 +550,15 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
                                                                         is_training, bn_decay=bn_decay,
                                                                         use_local=use_local)  # B x 7 predicted transformation
-
+    end_points['test_layer1'] = test_layer1
+    end_points['test_layer2'] = test_layer2
     #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
     #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
     end_points['predict_pos'] = transformation_7
     transformation = tf_quat_pos_2_homo(transformation_7)  # Bx4x4
 
     end_points['compare'] = [transformation_7, ran_pos]  # compare the predicted transformation and ground true transformation
+
     end_points['trans_dis'] = compute_pos_distance(transformation_7, ran_pos)  # add by asy, to compute the distance between predict and ground truth
 
     tf.summary.scalar('ang_dis', end_points['trans_dis'][0])
@@ -560,8 +567,8 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     point_cloud_transformed = apply_homo_to_pc(point_cloud_jitterd, transformation)  # apply this for shape transformation.
     # point_cloud_transformed = point_cloud_jitterd                                    # if you don't apply this
 
-    end_points['test_layer1'] = point_cloud              # original point cloud
-    end_points['test_layer2'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
+    end_points['opc'] = point_cloud              # original point cloud
+    end_points['rpc'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
 
     with tf.variable_scope('input_transform_net') as sc:
         transform3 = input_transform_net(point_cloud_transformed, is_training, bn_decay, K=3)
@@ -756,15 +763,20 @@ def train_one_epoch(sess, ops, train_writer, epoch):
         # Augment batched point clouds by rotation and jittering
         # rotated_data = rotate_point_cloud(current_data[start_idx:end_idx, :, :])
 
-        rotated_data = current_data[start_idx:end_idx, :, :] #batch x 1024 x 3
-        jittered_data = jitter_point_cloud(rotated_data)
-        jittered_data = jittered_data
+        current_batch_data = current_data[start_idx:end_idx, :, :] #batch x 1024 x 3
+        # current_batch_data = jitter_point_cloud(current_batch_data)
+        current_batch_data = current_batch_data
         # jittered_data = apply_np_homo(jittered_data)  #jittered data here, random homogeneous by default
 
-        feed_dict = {ops['pointclouds_pl']: jittered_data,
+        feed_dict = {ops['pointclouds_pl']: current_batch_data,
                      ops['pt_local_eigs_pl']: current_local[start_idx:end_idx],
                      ops['labels_pl']: current_label[start_idx:end_idx],
                      ops['is_training_pl']: is_training, }
+
+        tl1, tl2 = sess.run([ops['test_layer1'], ops['test_layer2']], feed_dict=feed_dict)
+        print('test layer1 shape ', np.shape(tl1), tl1)
+        print('test layer2 shape', np.shape(tl2), tl2)
+        print('compare predicted pose and origin pose:', sess.run(ops['compare'], feed_dict=feed_dict))
 
         summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['train_summary_merged'], ops['step'],
                                                                                    ops['train_op'], ops['loss'],
@@ -789,8 +801,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
     print('the distance between predict and ground truth is(ang and pos, training):', trans_dis)
     # the comparison between prediction and ground truth is listed here
     print('prediction is:', compare[0][0], '\n', 'ground truth' + '\n', compare[1][0])
-    #print('test layer value1(training):', test_layer1[0, :])
-    #print('test layer value2(training):', test_layer2[0, :])
+
     log_string('mean loss: %f' % (loss_sum / float(num_batches)))
     log_string('accuracy: %f' % (total_correct / float(total_seen)))  # asy anotationed
 
@@ -1160,9 +1171,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object8_6my.ckpt", use_local=True)
+    train(model_name="object_real_partial.ckpt", use_local=True)
 
-    # inference(os.path.join('tmp', "object8_5.ckpt"), use_local=True, show_result=True, times=1, test_batchsize=1)  # test time
+    inference(os.path.join('tmp', "object_real_partial.ckpt"), use_local=True, show_result=True, times=16, test_batchsize=1)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

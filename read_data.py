@@ -13,60 +13,81 @@ from copy import deepcopy
 import tensorflow as tf
 
 
-def save_data(save_path='', base_path='', n=5000, use_key_feature=True, nb_types=4, show_result=False):
+def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_data=True,
+              nb_types=4, show_result=False):
     """
-    transform the txt point clouds into h5py dataset for simplicity.
+    transform the txt point clouds into h5py dataset for simplicity. data augmentation of projection is implemented here
     :param save_path:
     :param n:
-    :param base_path:
+    :param base_path:  path contains txt or ply point cloud data
     :param use_key_feature: if you want to use the local key features
     :param nb_types: number of classes of used object
     :return:
     """
 
-    # tf.enable_eager_execution()
-    pc_tile = np.empty(shape=(nb_types*n, 1024, 3))
-    if use_key_feature:
-        pc_key_feature = np.empty(shape=(nb_types*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
-        # 9 for multi-scale eigen-value
-        #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
+    if train_data:
+        pc_tile = np.empty(shape=(nb_types * n, 1024, 3))
+        if use_key_feature:
+            pc_key_feature = np.empty(shape=(nb_types*n, int(1024*0.1), 9))  # key feature space, 102=1024*0.1,
+            # 9 for multi-scale eigen-value
+            #pc_pl = tf.placeholder(tf.float32, shape=(1, 1024, 3))
 
-    for k in range(nb_types):  # four objects model
-        for i, j in enumerate(range(k*n, (k+1)*n)):
+        for k in range(nb_types):  # number of types of  objects model, test data can ignore type label
+            for i, j in enumerate(range(k*n, (k+1)*n)):
 
-                if i % 10 == 0:
-                    print('reading number', i + 1, 'th lab'+str(k+1)+' point clouds')
+                    if i % 10 == 0:
+                        print('reading number', i + 1, 'th lab'+str(k+1)+' point clouds')
 
-                if use_key_feature:
+                    if use_key_feature:
+                        pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
+                        pc = PointCloud(pc)
 
-                    pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
-                    pc = PointCloud(pc)
-                    # pc.normalize()   # partial point cloud should not normalize
+                        pc.normalize()   # partial point cloud should not normalize
 
-                    expand = np.expand_dims(pc.position, axis=0)
-                    pc_tile[j, :, :] = expand
-                    # print('*****************************************')
-                    # print('reading point cloud cost time:{}'.format(t1 - t0))
-                    pc_key_eig = get_local_eig_np(expand, useiss=False)   # 1 x nb_keypoints x 9
+                        expand = np.expand_dims(pc.position, axis=0)
+                        pc_tile[j, :, :] = expand
+                        # print('*****************************************')
+                        # print('reading point cloud cost time:{}'.format(t1 - t0))
+                        pc_key_eig = get_local_eig_np(expand, useiss=False)   # 1 x nb_keypoints x 9
 
-                    # print('*****************************************')
-                    # print('get local cost time:{}'.format(t2 - t1))
-                    #pc_key_feature[i, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
-                    pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
-                else:
+                        # print('*****************************************')
+                        # print('get local cost time:{}'.format(t2 - t1))
+                        #pc_key_feature[i, :, :] = np.squeeze(sess.run(pc_key_eig, feed_dict={pc_pl: pc}))
+                        pc_key_feature[j, :, :] = np.squeeze(pc_key_eig)
+                    else:
 
-                    pc_tile[j, :, :] = np.expand_dims(
-                        np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt'), axis=0)
+                        pc_tile[j, :, :] = np.expand_dims(
+                            np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt'), axis=0)
 
-                # print('-----------------------------------------')
-                # print('one pc cost total:{}second'.format(te-ts))
-                # print('----------------------------------------')
+                    # print('-----------------------------------------')
+                    # print('one pc cost total:{}second'.format(te-ts))
+                    # print('----------------------------------------')
 
-    pc_label = np.tile(np.arange(nb_types), (n, 1)).reshape((-1,), order='F')
+        pc_label = np.tile(np.arange(nb_types), (n, 1)).reshape((-1,), order='F')
+        train_set_shape = (nb_types * n, 1024, 3)
+        train_set_local_shape = (nb_types * n, 102, 9)
+        train_label_shape = (nb_types * n,)
+    else:
+        ply_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply' or
+                    os.path.splitext(i)[1] == '.txt']
+        n = len(ply_list)
+        pc_label = np.arange(n)
+        train_set_shape = (n, 1024, 3)
+        train_set_local_shape = (n, 102, 9)
+        train_label_shape = (n,)
 
-    train_set_shape = (nb_types*n, 1024, 3)
-    train_set_local_shape = (nb_types*n, 102, 9)
-    train_label_shape = (nb_types*n, )
+
+        pc_tile = np.empty(shape=(n, 1024, 3))
+        pc_key_feature = np.empty(shape=(n, int(1024 * 0.1), 9))  # key feature space, 102=1024*0.1,
+        for i, j in enumerate(ply_list):
+            print(j)
+            mypc = PointCloud(j)
+            mypc.normalize()
+            expand = np.expand_dims(mypc.position, axis=0)
+            pc_tile[i, :, :] = expand
+            pc_key_eig = get_local_eig_np(expand, useiss=False)
+            if use_key_feature:
+                pc_key_feature[i, :, :] = np.squeeze(pc_key_eig)
 
     hdf5_file = h5py.File(save_path, mode='a')
     hdf5_file.create_dataset('train_set', train_set_shape, np.float32)  # be careful about the dtype
@@ -681,9 +702,33 @@ def scene_seg_dataset(pc_path, save_path, samples=1000, max_nb_pc=5, show_result
     hdf5_file.close()
 
 
+def txt2normalply(txt_path, write_path='/ply/'):
+    """
+
+    :param txt_path:
+    :param write_path:
+    :return: nothing, write file into write_path
+    """
+    for i, j, k in os.walk(txt_path):
+        if i == txt_path:
+            for m, l in enumerate(k):
+                a = np.loadtxt(i + '/' + l)
+                PC = PointCloud(a)
+                PC.down_sample(number_of_downsample=1024)
+
+                pc = o3d.PointCloud()
+                pc.points = o3d.Vector3dVector(PC.position)
+                o3d.estimate_normals(pc, o3d.KDTreeSearchParamHybrid(
+                    radius=10, max_nn=10))
+
+                o3d.write_point_cloud(i + write_path + str(m) + '.ply', pc)
+
+
+
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/mykeyptssimu_data.h5',
-            base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise', n=5000, nb_types=8)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/real_single_1024n.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply',
+              train_data=False, n=5000, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',

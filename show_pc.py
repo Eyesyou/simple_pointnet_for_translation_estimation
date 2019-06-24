@@ -1175,7 +1175,7 @@ class PointCloud:
             ind[k] = sample_sequence[k, 1]
         return sampled_pointcloud, ind.astype(int)
 
-    def compute_key_points(self, percentage=0.1, show_result=False, resolution_control=0.02, rate=0.05,
+    def compute_key_points(self, percentage=0.1, show_result=False, resolution_control=0.01, rate=0.05,
                            use_deficiency=False, show_saliency=False):
         """
         Intrinsic shape signature key point detection, salient point detection
