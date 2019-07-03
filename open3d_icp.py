@@ -59,7 +59,7 @@ def icp_two_pc(source, target, draw_result=False, point2plane=False):
         target.points = o3d.Vector3dVector(tmp)
 
     if point2plane:
-        result = o3d.registration_icp(source, target, 0.02, init=np.squeeze(ran_pos),
+        result = o3d.registration_icp(source, target, 0.02,
                                       estimation_method=o3d.TransformationEstimationPointToPlane())
     else:
         print('using point to point icp method')
@@ -156,8 +156,10 @@ def apply_np_homo(batch_point_cloud, homo='random'):
 
 
 if __name__ == "__main__":
-    # source = o3d.read_point_cloud("../../TestData/ICP/cloud_bin_0.pcd")
-    # target = o3d.read_point_cloud("../../TestData/ICP/cloud_bin_1.pcd")
+    source = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/bearing pedestal_ps.ply")
+    target = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/0.ply")
+    result = icp_two_pc(source, target, draw_result=True)
+    print('transformation is :', result)
     # threshold = 0.02
     # trans_init = np.asarray(
     #             [[0.862, 0.011, -0.507,  0.5],
@@ -189,35 +191,34 @@ if __name__ == "__main__":
     # draw_registration_result(source, target, reg_p2l.transformation)
 
 
-    base_path = '/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/pointcloud/fullbodyanya1.ply'
-    pc = PointCloud(base_path)
-    draw_normal(pc)
-
-
-    quaternion_range = [0, 0.01]
-    translation_range = [0, 0.01]
-    ran_pos = np.concatenate(
-        [np.random.uniform(size=(1, 1), low=0.9, high=1.),
-         np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
-         np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
-         np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
-         np.random.uniform(size=(1, 3), low=translation_range[0], high=translation_range[1])],
-        axis=1)  # random_ROTATION_and POSITION, batch x 7
-    print('ran_pos:***', ran_pos)
-    ran_pos = np.concatenate([preprocessing.normalize(ran_pos[:, :4], norm='l2'), ran_pos[:, 4:7]], axis=1) # normalize random pose
-    print('ran_pos:**********', ran_pos)
-    ran_pos = np_quat_pos_2_homo(ran_pos)
-
-    print('random pos is:', ran_pos)
-
-    pc = PointCloud('anya_2048_1.ply')
-    pc2 = PointCloud('anya_2048_2.ply')
-    pc.normalize()
-    pc2.normalize()
-
-    pc2 = PointCloud(apply_np_homo(pc2.position[np.newaxis, :], ran_pos))
-    print('before reg:')
-    draw_registration_result(pc, pc2)
-    print('after registration：')
-    result = icp_two_pc(pc.position, pc2.position, draw_result=True)
-    print('difference is :', np.abs(ran_pos-result))
+    # base_path = '/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/pointcloud/fullbodyanya1.ply'
+    # pc = PointCloud(base_path)
+    # draw_normal(pc)
+    #
+    # quaternion_range = [0, 0.01]
+    # translation_range = [0, 0.01]
+    # ran_pos = np.concatenate(
+    #     [np.random.uniform(size=(1, 1), low=0.9, high=1.),
+    #      np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
+    #      np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
+    #      np.random.uniform(size=(1, 1), low=quaternion_range[0], high=quaternion_range[1]),
+    #      np.random.uniform(size=(1, 3), low=translation_range[0], high=translation_range[1])],
+    #     axis=1)  # random_ROTATION_and POSITION, batch x 7
+    # print('ran_pos:***', ran_pos)
+    # ran_pos = np.concatenate([preprocessing.normalize(ran_pos[:, :4], norm='l2'), ran_pos[:, 4:7]], axis=1) # normalize random pose
+    # print('ran_pos:**********', ran_pos)
+    # ran_pos = np_quat_pos_2_homo(ran_pos)
+    #
+    # print('random pos is:', ran_pos)
+    #
+    # pc = PointCloud('anya_2048_1.ply')
+    # pc2 = PointCloud('anya_2048_2.ply')
+    # pc.normalize()
+    # pc2.normalize()
+    #
+    # pc2 = PointCloud(apply_np_homo(pc2.position[np.newaxis, :], ran_pos))
+    # print('before reg:')
+    # draw_registration_result(pc, pc2)
+    # print('after registration：')
+    # result = icp_two_pc(pc.position, pc2.position, draw_result=True)
+    # print('difference is :', np.abs(ran_pos-result))

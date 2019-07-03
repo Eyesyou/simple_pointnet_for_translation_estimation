@@ -85,13 +85,11 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     #                    bn=True, is_training=is_training,
     #                     scope='hconv111', bn_decay=bn_decay, weight_decay=0.0)     #BxNx1x64 4 variables of weight bises beta gamma
 
-    point_wise_1 = tf_util.conv2d(input_image, 64, [1, 3],
-                                 padding='VALID', stride=[1, 1],
-                                 bn=True, is_training=is_training,
-                                 scope='homo_conv1', bn_decay=bn_decay,
-                                 activation_fn=tf.nn.relu)      # Bxnx1x64
-
-    test_layer_output1 = input_image
+    point_wise_1 = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
+                                          activation=None, kernel_size=[1, 3])(net)  # b x nb_key_pts x 1 x 256
+    test_layer_output1 = point_wise_1
+    point_wise_1 = tf.keras.layers.BatchNormalization()(point_wise_1, training=is_training)
+    point_wise_1 = tf.keras.activations.relu(point_wise_1)
 
     #net = tf_util.conv2d(net, 128, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
     #                     scope='hconv12', bn_decay=bn_decay, weight_decay=0.0)
@@ -110,12 +108,13 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     test_layer_output2 = point_wise_2
     point_wise_2 = tf.keras.layers.BatchNormalization()(point_wise_2, training=is_training)
     point_wise_2 = tf.keras.activations.relu(point_wise_2)
-    point_wise_3 = tf.keras.layers.Conv2D(strides=(1, 1), filters=512, padding='valid',
+    point_wise_3 = tf.keras.layers.Conv2D(strides=(1, 1), filters=512, padding='valid', kernel_regularizer=tf.keras.regularizers.l2(0.01),
                                           activation=None, kernel_size=[1, 1])(point_wise_2)  # b x nb_key_pts x 1 x 256
     point_wise_3 = tf.keras.layers.BatchNormalization()(point_wise_3, training=is_training)
     point_wise_3 = tf.keras.activations.relu(point_wise_3)
 
-    integrated = tf_util.max_pool2d(point_wise_3, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1x1x512
+    # integrated = tf_util.max_pool2d(point_wise_3, [num_point, 1], padding='VALID', scope='hmaxpool')  # Bx1x1x512
+    integrated = tf.keras.layers.MaxPool2D(pool_size=(num_point, 1), padding='valid')(point_wise_3)
 
     integrated = tf.reshape(integrated, [batch_size, -1])  # B x 512
 
@@ -147,21 +146,44 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
                                              kernel_size=[1, 9])  # b x nb_key_pts x 1 x 256
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size * int(1024 * 0.1), -1])  # b*nb_key_pts  x 256
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense1')
-
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense2')
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense3')
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense4')
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense5')
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense6')
-        point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
-                                                    bn_decay=bn_decay, weight_decay=0.0, scope='ldense7')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense1')
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense1')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense2')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense3')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense4')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense5')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense6')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense7')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense8')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
+        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense2')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense3')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense4')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense5')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense6')
+        # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
+        #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense7')
 
 
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024 * 0.1), 1, -1])  # b x nb_key_pts x 1 x 1024

@@ -36,25 +36,29 @@ LOG_FOUT = open('log_train.txt', 'w')
 init_learning_rate = float(10 ** -np.random.randint(-1, 8) * np.random.random(1))
 init_learning_rate = 0.0002
 decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
-decay_rate = 0.999
+decay_rate = 0.9
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 1000
-batchsize = 8
+batchsize = 50
 max_epoch = 100  # 200
-nb_classes = 8
+nb_classes = 13
 nb_points = 1024
 key_pts_percentage = 0.1
-pc_scale_factor = 100
-# tile_size = 256   # total
+pc_scale_factor = 1
+tile = True
+tile_size = 100   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/real_single_1024.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n.h5')  # file path
 
-pc_tile = readh5['train_set'][:]  # 20000 * 1024 * 3
-pc_local_eigs = readh5['train_set_local'][:]  # 20000 * 102 * 9
+pc_tile = readh5['train_set'][:]  # n * 1024 * 3
+pc_local_eigs = readh5['train_set_local'][:]  # n * 102 * 9
 pc_label = readh5['train_labels'][:]
+print('original shape of pc_tile', np.shape(pc_tile), 'pc_local_eigs:', np.shape(pc_local_eigs), 'pc_label:', np.shape(pc_label))
+if tile:
+    pc_tile = np.tile(pc_tile, (tile_size, 1, 1))
+    pc_local_eigs = np.tile(pc_local_eigs, (tile_size, 1, 1))
+    pc_label = np.tile(pc_label, (tile_size, ))
 
-pc_test = pc_tile[0, :, :]
-pc_test = PointCloud(pc_test)
 quaternion_range = [0, 0.5]
 translation_range = [-150, 150]
 
@@ -72,28 +76,26 @@ pc_tile *= pc_scale_factor   # for scale
 
 # pc_tile += -5 + 10*np.random.random(size=(20000, 1, 3))  # 20000 * 1024 * 3
 
-
-
-light = np.array([[1,  0,  0],
-                 [0,  0,  1],
-                 [1,  1,  0],
-                 [0,  1,  0]])
+light = np.array([[1.0,  0.0,  0.0],
+                 [0.0,  0.0,  1.0],
+                 [1.0,  1.0,  0.0],
+                 [0.0,  1.0,  0.0]])
 #dark = np.random.random((4, 3)) * 0.8 + 0.2
 print('light color:', light)
 shade = light * 0.7
 
-light1 = light[0, :].tolist()
-shade1 = shade[0, :].tolist()
-light2 = light[1, :].tolist()
-shade2 = shade[1, :].tolist()
-light3 = light[2, :].tolist()
-shade3 = shade[2, :].tolist()
-light4 = light[3, :].tolist()
-shade4 = shade[3, :].tolist()
+light1 = tuple(light[0, :].tolist())
+shade1 = tuple(shade[0, :].tolist())
+light2 = tuple(light[1, :].tolist())
+shade2 = tuple(shade[1, :].tolist())
+light3 = tuple(light[2, :].tolist())
+shade3 = tuple(shade[2, :].tolist())
+light4 = tuple(light[3, :].tolist())
+shade4 = tuple(shade[3, :].tolist())
 
-colorset = [shade1, light1, shade2, light2, shade3, light3, shade4, light4]
-
-colorset = [[plt.cm.Set1(i)[:3], tuple(np.asarray(plt.cm.Set1(i)[:3])*0.7)] for i in range(8)]
+colorset = [[light4, light2], [shade2, light2], [shade3, light3], [shade4, light4]]
+print(colorset)
+# colorset = [[plt.cm.Set1(i)[:3], tuple(np.asarray(plt.cm.Set1(i)[:3])*0.7)] for i in range(8)]
 
 print('initial learning rate :', init_learning_rate, '\n', 'decay_rate is :', decay_rate, '\n',
       'decay_step is: ', decay_step, 'max_epoch is:', max_epoch, '\n', 'batchsize is:', batchsize)
@@ -413,7 +415,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
                      ops['pt_local_eigs_pl']: pc_local_eigs[rand_idx, :, :],
                      ops['labels_pl']: pc_label[rand_idx],
-                     ops['is_training_pl']: False}
+                     ops['is_training_pl']:  False}
 
         start = time.time()
         [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, mpc, summary, cls_out, first_ly] = \
@@ -452,7 +454,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             # opc += rand_trans
             # rpc += rand_trans
 
-            fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=100, returnfig=True)  # simulate the ramdon
+            fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=2, returnfig=True)  # simulate the ramdon
 
             filename1 = 'before_alignment1.png'
             while(True):
@@ -466,7 +468,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             print('before image saved')
             mlab.close()
 
-            fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=100, returnfig=True)  # after recover
+            fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=2, returnfig=True)  # after recover
 
             filename1='after_alignment1.png'
             while(True):
@@ -549,7 +551,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     with tf.variable_scope('homo_transform_net') as sc:
         transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
                                                                         is_training, bn_decay=bn_decay,
-                                                                        use_local=use_local)  # B x 7 predicted transformation
+                                                                        use_local= use_local)  # B x 7 predicted transformation
     end_points['test_layer1'] = test_layer1
     end_points['test_layer2'] = test_layer2
     #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
@@ -580,20 +582,20 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     input_image = tf.expand_dims(point_cloud_transformed, -1)  # become Bxnx3x1
 
     with tf.variable_scope('main_net') as sc:
-        net = tf_util.conv2d(input_image, 64, [1, 3],
-                             padding='VALID', stride=[1, 1],
-                             bn=True, is_training=is_training,
-                             scope='conv1', bn_decay=bn_decay)      # Bxnx1x64
 
-        net = tf_util.conv2d(net, 128, [1, 1],
-                         padding = 'VALID', stride=[1, 1],
-                         bn = True, is_training=is_training,
-                         scope = 'conv2', bn_decay=bn_decay)       # Bx1024x1x128
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
+                                     activation=None, kernel_size=[1, 3], name='conv1')(input_image)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=128, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv2')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=256, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv3')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
 
-        net = tf_util.conv2d(net, 256, [1, 1],
-                         padding = 'VALID', stride=[1, 1],
-                         bn = True, is_training=is_training,
-                         scope = 'conv2_copy', bn_decay=bn_decay)       #   Bx1024x1x256
 
     with tf.variable_scope('feature_transform_net') as sc:
         transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
@@ -608,52 +610,46 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
 
     #  classification network
     with tf.variable_scope('main_net') as sc:
-        net = tf_util.conv2d(net_transformed, 64, [1, 1],
-                         padding='VALID', stride=[1, 1],
-                         bn=True, is_training=is_training,
-                         scope='conv3', bn_decay=bn_decay)      #Bx1024x1x64
 
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv4')(net)  # b x nb_key_pts x 1 x 256
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
         end_points['first_layer_output'] = tf.reshape(net, shape=[batch_size, 1024, 64])  # B X 1024 X 64
+        # glorot_uniform also known as xavier uniform initializer.
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=128, padding='valid', kernel_initializer='glorot_uniform',
+                                     activation=None, kernel_size=[1, 1], name='conv4')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=256, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv5')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
 
-        net = tf_util.conv2d(net, 128, [1, 1],
-                         padding='VALID', stride=[1, 1],
-                         bn=True, is_training=is_training,
-                         scope = 'conv4', bn_decay=bn_decay)      #Bx1024x1x128
-        net = tf_util.conv2d(net, 256, [1, 1],
-                         padding='VALID', stride=[1, 1],
-                         bn=True, is_training=is_training,
-                         scope='conv4_copy', bn_decay=bn_decay)      #Bx1024x1x128
-        net = tf_util.conv2d(net, 512, [1, 1],
-                         padding='VALID', stride=[1, 1],
-                         bn=True, is_training=is_training,
-                         scope='conv5_copy', bn_decay=bn_decay)      #Bx1024x1x128
-        net = tf_util.conv2d(net, 1024, [1, 1],
-                         padding='VALID', stride=[1, 1],
-                         bn=True, is_training=is_training,
-                         scope='conv5', bn_decay=bn_decay)      #B x 1024 x 1 x 1024
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=512, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv6')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=1024, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv7')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
 
-    # Symmetric function: max pooling
-        net = tf_util.max_pool2d(net, [num_point, 1],
-                             padding='VALID', scope='maxpool') #B x1x1x1024
-
+        net = tf.keras.layers.MaxPool2D(pool_size=(num_point, 1), padding='valid')(net)
         net = tf.reshape(net, [batch_size, -1])  # Bx1024
 
-        net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training,
-                                  scope='fc1', bn_decay=bn_decay)  #Bx512
-        net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
-                          scope='dp1')
-        net = tf_util.fully_connected(net, 512, bn=True, is_training=is_training,
-                                  scope='fc2', bn_decay=bn_decay)  #Bx256
-        net = tf_util.fully_connected(net, 256, bn=True, is_training=is_training,
-                                  scope='fc3', bn_decay=bn_decay)  #Bx256
-        # net = tf_util.fully_connected(net, 128, bn=True, is_training=is_training,
-        #                           scope='fc4', bn_decay=bn_decay)  #Bx256
-        # net = tf_util.fully_connected(net, 64, bn=True, is_training=is_training,
-        #                           scope='fc5', bn_decay=bn_decay)  #Bx256
-        # net = tf_util.fully_connected(net, 32, bn=True, is_training=is_training,
-        #                           scope='fc6', bn_decay=bn_decay)  #Bx256
-        # net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
-        #                   scope='dp2')
+        net = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='fc1')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
+        net = tf.keras.layers.Dropout(rate=0.7, name='dp1')(net, training=is_training)
+        net = tf.keras.layers.Dense(512, activation=tf.nn.relu, name='fc2')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Dense(256, activation=tf.nn.relu, name='fc3')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
         end_points['classification_output'] = tf.reshape(net, shape=[batch_size, -1])  #B X 256
         if use_local:
             # b x nb_key_pts x 9 x 1 , 9 because multi-scale
@@ -669,10 +665,10 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
             point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
 
             net = tf.concat([net, point_cloud_local], axis=-1)   # Bx256
-            prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='fc7')# B x 4
+            prediction = tf.keras.layers.Dense(nb_classes, name='fc7')(net)
+
         else:
-            prediction = tf_util.fully_connected(net, nb_classes, activation_fn=None, scope='train_without_local')
-            # B x 4
+            prediction = tf.keras.layers.Dense(nb_classes, name='train_without_local_fc7')(net)
 
     return prediction, end_points #net is the final prediction of 4 classes
 
@@ -713,7 +709,6 @@ def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, p
         final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")   # if trans_diff * 0.0 means end-to-end trainning
 
     return final_loss
-
 
 
 def placeholder_inputs(batch_size, num_point):
@@ -757,8 +752,8 @@ def train_one_epoch(sess, ops, train_writer, epoch):
     for batch_idx in range(num_batches):
         if (batch_idx+1) % 100 == 0:
             log_string('**** batch %03d ****' % (batch_idx+1))
-        start_idx = batch_idx * batchsize #0
-        end_idx = (batch_idx + 1) * batchsize #4
+        start_idx = batch_idx * batchsize  # 0
+        end_idx = (batch_idx + 1) * batchsize   # 4
 
         # Augment batched point clouds by rotation and jittering
         # rotated_data = rotate_point_cloud(current_data[start_idx:end_idx, :, :])
@@ -773,10 +768,10 @@ def train_one_epoch(sess, ops, train_writer, epoch):
                      ops['labels_pl']: current_label[start_idx:end_idx],
                      ops['is_training_pl']: is_training, }
 
-        tl1, tl2 = sess.run([ops['test_layer1'], ops['test_layer2']], feed_dict=feed_dict)
-        print('test layer1 shape ', np.shape(tl1), tl1)
-        print('test layer2 shape', np.shape(tl2), tl2)
-        print('compare predicted pose and origin pose:', sess.run(ops['compare'], feed_dict=feed_dict))
+        # tl1, tl2 = sess.run([ops['test_layer1'], ops['test_layer2']], feed_dict=feed_dict)
+        # print('test layer1 shape ', np.shape(tl1), tl1)
+        # print('test layer2 shape', np.shape(tl2), tl2)
+        # print('compare predicted pose and origin pose:', sess.run(ops['compare'], feed_dict=feed_dict))
 
         summary, step, _, loss_val, pred_val, trans_dis, compare, layer1, layer2 = sess.run([ops['train_summary_merged'], ops['step'],
                                                                                    ops['train_op'], ops['loss'],
@@ -916,7 +911,7 @@ def tf_euler_pos_2_homo(batch_input):
                             tf.constant(1.0, shape=[batch, 1])], axis=1), shape=[batch, 3, 3])
 
     rotation = tf.matmul(tf.matmul(rotation_x, rotation_y), rotation_z)  # Bx3x3
-    transition = tf.concat([pos_x, pos_y,pos_z], axis=1)    # Bx3x1
+    transition = tf.concat([pos_x, pos_y, pos_z], axis=1)    # Bx3x1
     batch_out = tf.concat([rotation, transition], axis=2)  # Bx3x4
     pad = tf.concat([tf.constant(0.0, shape=[batch, 1, 3]), tf.ones([batch, 1, 1], dtype=tf.float32)], axis=2)  # Bx1x4
     batch_out = tf.concat([batch_out, pad], axis=1)  # Bx4x4
@@ -1171,9 +1166,9 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object_real_partial.ckpt", use_local=True)
+    train(model_name="object_real_partial2.ckpt", use_local=True)
 
-    inference(os.path.join('tmp', "object_real_partial.ckpt"), use_local=True, show_result=True, times=16, test_batchsize=1)  # test time
+    inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=True, times=5, test_batchsize=1)  # test time
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

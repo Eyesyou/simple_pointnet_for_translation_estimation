@@ -14,7 +14,7 @@ import tensorflow as tf
 
 
 def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_data=True,
-              nb_types=4, show_result=False):
+              nb_types=4, show_result=False, normalize=True):
     """
     transform the txt point clouds into h5py dataset for simplicity. data augmentation of projection is implemented here
     :param save_path:
@@ -41,8 +41,8 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
                     if use_key_feature:
                         pc = np.loadtxt(base_path+'/lab'+str(k+1)+'/lab_project'+str(i)+'.txt')  # pc = tf.convert_to_tensor(pc, dtype=tf.float32)
                         pc = PointCloud(pc)
-
-                        pc.normalize()   # partial point cloud should not normalize
+                        if normalize:
+                            pc.normalize()   # partial point cloud should not normalize
 
                         expand = np.expand_dims(pc.position, axis=0)
                         pc_tile[j, :, :] = expand
@@ -76,13 +76,13 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
         train_set_local_shape = (n, 102, 9)
         train_label_shape = (n,)
 
-
         pc_tile = np.empty(shape=(n, 1024, 3))
         pc_key_feature = np.empty(shape=(n, int(1024 * 0.1), 9))  # key feature space, 102=1024*0.1,
         for i, j in enumerate(ply_list):
             print(j)
             mypc = PointCloud(j)
-            mypc.normalize()
+            if normalize:
+                mypc.normalize()
             expand = np.expand_dims(mypc.position, axis=0)
             pc_tile[i, :, :] = expand
             pc_key_eig = get_local_eig_np(expand, useiss=False)
@@ -726,9 +726,9 @@ def txt2normalply(txt_path, write_path='/ply/'):
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/real_single_1024n.h5',
-              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply',
-              train_data=False, n=5000, nb_types=8)
+    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly',
+              normalize=True, train_data=False, n=5000, nb_types=8)
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
