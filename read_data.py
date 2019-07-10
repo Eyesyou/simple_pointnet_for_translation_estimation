@@ -19,12 +19,13 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
     transform the txt point clouds into h5py dataset for simplicity. data augmentation of projection is implemented here
     :param save_path:
     :param n:
+    :param train_data whether it is training data or it is test data. if its testdata, label is random.
     :param base_path:  path contains txt or ply point cloud data
     :param use_key_feature: if you want to use the local key features
     :param nb_types: number of classes of used object
     :return:
     """
-
+    compute_time = []
     if train_data:
         pc_tile = np.empty(shape=(nb_types * n, 1024, 3))
         if use_key_feature:
@@ -48,6 +49,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
                         pc_tile[j, :, :] = expand
                         # print('*****************************************')
                         # print('reading point cloud cost time:{}'.format(t1 - t0))
+
                         pc_key_eig = get_local_eig_np(expand, useiss=False)   # 1 x nb_keypoints x 9
 
                         # print('*****************************************')
@@ -78,14 +80,18 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
 
         pc_tile = np.empty(shape=(n, 1024, 3))
         pc_key_feature = np.empty(shape=(n, int(1024 * 0.1), 9))  # key feature space, 102=1024*0.1,
+
         for i, j in enumerate(ply_list):
             print(j)
+            start_time = time.clock()
             mypc = PointCloud(j)
             if normalize:
                 mypc.normalize()
             expand = np.expand_dims(mypc.position, axis=0)
             pc_tile[i, :, :] = expand
             pc_key_eig = get_local_eig_np(expand, useiss=False)
+            end_time = time.clock()
+            compute_time.append([end_time-start_time])
             if use_key_feature:
                 pc_key_feature[i, :, :] = np.squeeze(pc_key_eig)
 
@@ -97,7 +103,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
     hdf5_file["train_labels"][...] = pc_label
     hdf5_file["train_set_local"][...] = pc_key_feature
     hdf5_file.close()
-
+    return compute_time
 
 def read_data(h5_path=''):
     readh5 = h5py.File(h5_path, "r")  # file path
@@ -726,9 +732,9 @@ def txt2normalply(txt_path, write_path='/ply/'):
 
 
 if __name__ == "__main__":
-    save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n.h5',
+    print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n_2.h5',
               base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly',
-              normalize=True, train_data=False, n=5000, nb_types=8)
+              normalize=True, train_data=False, n=5000, nb_types=8))
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',

@@ -22,9 +22,7 @@ import cv2
 
 from show_pc import PointCloud
 
-
-
-def saliancey2range():
+def saliancey2range(resolution_control=0.005):
     for j, i in enumerate(f_list):
         print(' point cloud is', i)
         pc = PointCloud(i)
@@ -32,13 +30,21 @@ def saliancey2range():
         for k in range(4):
             if k == 0:
                 k = -0.5
-            fig = pc.compute_key_points(percentage=0.1, show_result=False, resolution_control=0.005, rate=0.05 * k + 0.05,
+            fig = pc.compute_key_points(percentage=0.1, show_result=False, resolution_control=resolution_control, rate=0.05 * k + 0.05,
+                                        use_deficiency=False, show_saliency=True)
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            img = mlab.screenshot()
+            mlab.savefig(filename=str(j) + str(k) + '_without.png')
+            mlab.close()
+            fig = pc.compute_key_points(percentage=0.1, show_result=False, resolution_control=resolution_control, rate=0.05 * k + 0.05,
                                         use_deficiency=True, show_saliency=True)
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             img = mlab.screenshot()
-            mlab.savefig(filename=str(j) + str(k) + '.png')
+            mlab.savefig(filename=str(j) + str(k) + '_with.png')
             mlab.close()
+
         del pc
 
 
@@ -206,13 +212,10 @@ def feature_mean_deviation(pc_path, samples=15, chamfer=True, method='ball'):
             features = pc.generate_r_neighbor()
 
         elif method =='knn':
-
             pass
         elif method == 'octree':
-
             pass
         elif method == 'kdtree':
-
             pass
 
 
@@ -250,13 +253,14 @@ def knn_plot(pc_path=''):
             pc = PointCloud(i)
             pc.down_sample(number_of_downsample=4096)
             pc.add_noise(factor=0.04)
-            pc.add_outlier(factor=0.02)
+            pc.add_outlier(factor=0.04)
             fig = pc.compute_key_points(percentage=0.02, resolution_control=1/15, rate=0.05, use_deficiency=False,show_result=True) # get the key points id
 
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
             mlab.savefig(filename=str(j) + '_0.png')
             mlab.close()
+
             colorset = np.random.random((100, 3))
             fig = pc.generate_k_neighbor(k=32, show_result=True, colorset=colorset)
 
@@ -277,6 +281,43 @@ def knn_plot(pc_path=''):
             mlab.savefig(filename=str(j) + '_3.png')
             mlab.close()
 
+
+def key_points_plot(flist):
+    for i in flist:
+        Pc = PointCloud(i)
+        Pc.down_sample(4096)
+        fig = Pc.compute_key_points(percentage=0.1, resolution_control=None, show_result=True)
+
+        f = mlab.gcf()  # this two line for mlab.screenshot to work
+        f.scene._lift()
+        img = mlab.screenshot()
+        mlab.savefig(filename=str(i) + 'key_points.png')
+        mlab.close()
+
+        fig = Pc.compute_key_points(percentage=0.1, resolution_control=0.01, show_result=True)
+
+        f = mlab.gcf()  # this two line for mlab.screenshot to work
+        f.scene._lift()
+        img = mlab.screenshot()
+        mlab.savefig(filename=str(i) + 'key_points_with_resolution_ctrl.png')
+        mlab.close()
+
+
+def segmentation_pcs_plot(pcs_path='', colorset=None):
+    if colorset is None:
+        colorset = [(226,50,226),(202,44,66),(111,41,66),(43,173,80),(51,200,200),(255,1,128),(23,48,217),(24,121,73)]
+    f_list = [pcs_path + '/' + i for i in os.listdir(pcs_path) if os.path.splitext(i)[1] == '.ply']
+    mfig = mlab.figure(bgcolor=(1, 1, 1))
+    for j,i in enumerate(f_list):
+        if j <=7:
+            pc = PointCloud(i)
+
+            mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2],
+                          pc.position[:, 2] * 10 ** -9 + 1,
+                          color=tuple((np.asarray(colorset[j],dtype=np.float)/255).tolist()),
+                          scale_factor=3, figure=mfig)
+
+    mlab.show()
 
 if __name__ == "__main__":
 
@@ -319,14 +360,18 @@ if __name__ == "__main__":
     # print(pc.shape, layer.shape)
     # vis_first_layer(pc, layer, vis_rate=1/10)
     # feature_mean_deviation('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.02noise/lab1')
-    base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
-    f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
-    for j,i in enumerate(f_list):
-        if j <4:
-            pc = PointCloud(i)
-            pc.down_sample(number_of_downsample=20000)
-            fig = pc.show(not_show=True, scale=0.4)
-            f = mlab.gcf()  # this two line for mlab.screenshot to work
-            f.scene._lift()
-            mlab.savefig(filename=str(j) + '_2.png')
-            mlab.close()
+    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    # f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
+    # key_points_plot(f_list)
+    # saliancey2range()
+    # for j,i in enumer
+    # ate(f_list):
+    #     if j <4:
+    #         pc = PointCloud(i)
+    #         pc.down_sample(number_of_downsample=20000)
+    #         fig = pc.show(not_show=True, scale=0.4)
+    #         f = mlab.gcf()  # this two line for mlab.screenshot to work
+    #         f.scene._lift()
+    #         mlab.savefig(filename=str(j) + '_2.png')
+    #         mlab.close()
+    segmentation_pcs_plot(pcs_path='/media/sjtu/software/ASY/pointcloud/三维扫描7.8/24')

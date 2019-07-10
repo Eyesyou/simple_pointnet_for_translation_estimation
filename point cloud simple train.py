@@ -346,7 +346,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     tf.reset_default_graph()
 
     print('test_batchsize is :', test_batchsize)
-    with tf.device('/gpu:0'):
+    with tf.device('/gpu:0'):  # whether you want to use gpu or cpu, if batch_size is mall, cpu might be faster!!
         pointclouds_pl, labels_pl = placeholder_inputs(test_batchsize, nb_points)
         pt_local_eigs_pl = tf.placeholder(tf.float32, shape=(test_batchsize, int(nb_points * 0.1), 9))
         is_training_pl = tf.placeholder(tf.bool, shape=())
@@ -368,7 +368,11 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     sess = tf.Session(config=config)
     inference_writer = tf.summary.FileWriter(os.path.join('log', 'inference'), sess.graph)
     # Restore variables from disk.
+    model_restore_start = time.clock()
     saver.restore(sess, model_path)
+    model_restore_end = time.clock()
+    mode_restore_time = model_restore_end-model_restore_start
+    print('model restore time is :', model_restore_end-model_restore_start)
     log_string("Model restored.")
 
     # sess.run(init, {is_training_pl: False})
@@ -409,7 +413,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             # pc_local_eigs = get_local_eig_np(points)   # todo once define pc_local_eigs here,pc_tile becomes local variable
 
         rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
-        rand_idx = np.array((j, ))
+        # rand_idx = np.array((j, ))
         tsne_label[j] = pc_label[rand_idx]  # (b, )
         point_clouds[j] = pc_tile[rand_idx, :, :]  # (b x nb_points x 3)
         feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
@@ -417,7 +421,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
                      ops['labels_pl']: pc_label[rand_idx],
                      ops['is_training_pl']:  False}
 
-        start = time.time()
+        start = time.clock()
         [pred_class, total_loss, ran_pos, predict_pos, trans_dis, opc, rpc, mpc, summary, cls_out, first_ly] = \
             sess.run([ops['pred'], ops['loss'], ops['random_pos'],
                       ops['predict_pos'], ops['trans_dis'],
@@ -431,8 +435,9 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
 
         tf.summary.scalar('total_loss', total_loss)
         inference_writer.add_summary(summary, j)
-        end = time.time()
-        print('inference time cost:{} s'.format(end-start))
+        end = time.clock()
+        inference_time = end-start
+        print('inference time cost:{} s'.format(inference_time))
         print('trans dis is :{}'.format(trans_dis))
         print('total loss is:{}'.format(total_loss))
 
@@ -497,6 +502,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         np.save('tsne_label.npy', tsne_label)
         np.save('point_clouds.npy', point_clouds)
         # plot_embedding_3d(classification_output4tsne, tsne_label, point_clouds=point_clouds)
+    return inference_time
 
 
 def get_bn_decay(batch):
@@ -1166,9 +1172,11 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object_real_partial2.ckpt", use_local=True)
-
-    inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=True, times=5, test_batchsize=1)  # test time
+    # train(model_name="object_real_partial2.ckpt", use_local=True)
+    mst = []
+    for i in range(9):
+        mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)
+    print(mst)
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()
