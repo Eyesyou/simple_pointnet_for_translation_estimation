@@ -319,6 +319,42 @@ def segmentation_pcs_plot(pcs_path='', colorset=None):
 
     mlab.show()
 
+
+def projection_plot(pcpath=''):
+    f_list = [pcpath + '/' + i for i in os.listdir(pcpath) if os.path.splitext(i)[1] == '.ply']
+    fig = plt.figure(figsize=(38, 20), dpi=600, facecolor='w')
+    for i,j in enumerate(f_list):
+        pc = PointCloud(j)
+        pc.down_sample(number_of_downsample=10000)
+        size = 2.5
+        if i ==7:
+            size  = 1
+        try:
+            mfig = pc.half_by_plane(n=1024, grid_resolution=(200, 200), show_result=size)
+        except:
+            try:
+                mfig = pc.half_by_plane(n=1024, grid_resolution=(250, 250), show_result=size)
+            except:
+                try:
+                    mfig = pc.half_by_plane(n=1024, grid_resolution=(300, 300), show_result=size)
+                except:
+                    mfig = pc.half_by_plane(n=1024, grid_resolution=(650, 650), show_result=size)
+
+
+        f = mlab.gcf()  # this two line for mlab.screenshot to work
+        f.scene._lift()
+        mlab.savefig(str(i)+'.png')
+        img = mlab.screenshot(figure=mfig)
+        mlab.close()
+        ax = fig.add_subplot(2, 4, i+1)
+        ax.imshow(img)
+        ax.set_axis_off()
+
+    plt.subplots_adjust(wspace=0, hspace=0)
+    plt.show()
+
+
+
 if __name__ == "__main__":
 
     # print('the type of X_tsne is {}:, the shape is {}'.format(type(X), X.shape))
@@ -374,4 +410,6 @@ if __name__ == "__main__":
     #         f.scene._lift()
     #         mlab.savefig(filename=str(j) + '_2.png')
     #         mlab.close()
-    segmentation_pcs_plot(pcs_path='/media/sjtu/software/ASY/pointcloud/三维扫描7.8/24')
+    # segmentation_pcs_plot(pcs_path='/media/sjtu/software/ASY/pointcloud/三维扫描7.8/24')
+
+    projection_plot(pcpath='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object')

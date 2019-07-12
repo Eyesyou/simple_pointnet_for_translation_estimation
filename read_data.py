@@ -244,10 +244,10 @@ def augment_data(base_path='', pc_path='', add_noise=0.04, add_outlier=0.04, n=5
                 pc2.half_by_plane(n=1024, grid_resolution=(200, 200))
             except:
                 try:
-                    pc2.half_by_plane(n=1024, grid_resolution=(350, 350))
+                    pc2.half_by_plane(n=1024, grid_resolution=(250, 250))
                 except:
                     try:
-                        pc2.half_by_plane(n=1024, grid_resolution=(500, 500))
+                        pc2.half_by_plane(n=1024, grid_resolution=(300, 300))
                     except:
                         pc2.half_by_plane(n=1024, grid_resolution=(650, 650))
 
@@ -732,9 +732,9 @@ def txt2normalply(txt_path, write_path='/ply/'):
 
 
 if __name__ == "__main__":
-    print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n_2.h5',
-              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly',
-              normalize=True, train_data=False, n=5000, nb_types=8))
+    # print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n_2.h5',
+    #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly',
+    #           normalize=True, train_data=False, n=5000, nb_types=8))
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -754,10 +754,10 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    #for i in range(1, 9):
-    #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i),
-    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/myiterestingptsmethod/lab'+str(i)+'/final.ply',
-    #                  add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
+    for i in range(1, 9):
+       augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i),
+                     pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i)+'/final.ply',
+                     add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')

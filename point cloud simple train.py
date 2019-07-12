@@ -48,7 +48,7 @@ pc_scale_factor = 1
 tile = True
 tile_size = 100   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/normalized_with_rectrl.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # n * 1024 * 3
 pc_local_eigs = readh5['train_set_local'][:]  # n * 102 * 9
@@ -60,7 +60,7 @@ if tile:
     pc_label = np.tile(pc_label, (tile_size, ))
 
 quaternion_range = [0, 0.5]
-translation_range = [-150, 150]
+translation_range = [-550, 550]
 
 pc_tile *= pc_scale_factor   # for scale
 
@@ -94,7 +94,7 @@ light4 = tuple(light[3, :].tolist())
 shade4 = tuple(shade[3, :].tolist())
 
 colorset = [[light4, light2], [shade2, light2], [shade3, light3], [shade4, light4]]
-print(colorset)
+print('colorset to plot point clouds:', colorset)
 # colorset = [[plt.cm.Set1(i)[:3], tuple(np.asarray(plt.cm.Set1(i)[:3])*0.7)] for i in range(8)]
 
 print('initial learning rate :', init_learning_rate, '\n', 'decay_rate is :', decay_rate, '\n',
@@ -306,7 +306,7 @@ def train(model_name, use_local=False):
             log_string('**** EPOCH %03d ****' % (epoch))
             sys.stdout.flush()
 
-            train_one_epoch(sess, ops, train_writer, epoch)  # trainning and evaluation is starting simultaneous
+            train_one_epoch(sess, ops, train_writer, epoch, shuffle_data=False)  # trainning and evaluation is starting simultaneous
             eval_one_epoch(sess, ops, test_writer, epoch)  # after training, evaluation is begin.
 
             # Save the variables to disk.
@@ -327,7 +327,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     :param vis_feature:
     :param vis_tsne:
     :param test_batchsize:
-    :return:
+    :return: the inference time
     """
 
     try:
@@ -431,12 +431,14 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
                       ops['first_layer_output']],
                       feed_dict=feed_dict)
 
+        end = time.clock()
+        inference_time = end-start
+
         classification_output4tsne[j] = cls_out  # b x 256
 
         tf.summary.scalar('total_loss', total_loss)
         inference_writer.add_summary(summary, j)
-        end = time.clock()
-        inference_time = end-start
+
         print('inference time cost:{} s'.format(inference_time))
         print('trans dis is :{}'.format(trans_dis))
         print('total loss is:{}'.format(total_loss))
@@ -734,22 +736,23 @@ def get_learning_rate(batch, truncated=0.0000001):
     return learning_rate
 
 
-def train_one_epoch(sess, ops, train_writer, epoch):
+def train_one_epoch(sess, ops, train_writer, epoch, shuffle_data=True):
     """ ops: dict mapping from string to tf ops """
     is_training = True
 
     current_data = pc_tile  # (20000) x 1024 x 3 numpy array
     current_local_eig = pc_local_eigs   # (20000) x 102 x 9 numpy array
     current_label = pc_label
+    if shuffle_data:
+        current_data, current_label, current_local_eig, _ = \
+            shuffle_data(current_data, np.squeeze(current_label), current_local_eig)  # Shuffle train files
 
-    current_data, current_label, current_local, _ = \
-        shuffle_data(current_data, np.squeeze(current_label), current_local_eig)  # Shuffle train files
     current_label = np.squeeze(current_label)
 
     # here we implement asy's chunk sort method for test******
 
     file_size = current_data.shape[0]  # 4 x tile_size
-    num_batches = file_size // batchsize  # devide in integer
+    num_batches = file_size // batchsize  # devide return in integer
 
     total_correct = 0
     total_seen = 0
@@ -770,7 +773,7 @@ def train_one_epoch(sess, ops, train_writer, epoch):
         # jittered_data = apply_np_homo(jittered_data)  #jittered data here, random homogeneous by default
 
         feed_dict = {ops['pointclouds_pl']: current_batch_data,
-                     ops['pt_local_eigs_pl']: current_local[start_idx:end_idx],
+                     ops['pt_local_eigs_pl']: current_local_eig[start_idx:end_idx],
                      ops['labels_pl']: current_label[start_idx:end_idx],
                      ops['is_training_pl']: is_training, }
 
@@ -1172,11 +1175,11 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    # train(model_name="object_real_partial2.ckpt", use_local=True)
-    mst = []
-    for i in range(9):
-        mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)
-    print(mst)
+    train(model_name="object_real_partial3.ckpt", use_local=True)
+    # mst = []  # record inference time
+    # for i in range(9):
+    #     mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)
+    # print(mst)
     # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

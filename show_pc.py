@@ -581,13 +581,14 @@ class PointCloud:
                                                     np.expand_dims(self.visible[:, 2], axis=1) - C * t_1], axis=1)
 
         if show_result:
-            mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+            figm = mlab.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
             fig = mlab.points3d(self.visible[:, 0], self.visible[:, 1], self.visible[:, 2],
-                                self.visible[:, 2] * 10 ** -2 + 1, color=(0, 1, 0),  # +self.range * scale
-                                scale_factor=0.4)  # colormap='Spectral', color=(0, 1, 0)
+                                self.visible[:, 2] * 10 ** -2 + 1, colormap='Spectral',  # +self.range * scale
+                                scale_factor=show_result, figure=figm)  # colormap='Spectral', color=(0, 1, 0)
             fig.glyph.glyph_source.glyph_source.phi_resolution = 64
             fig.glyph.glyph_source.glyph_source.theta_resolution = 64
-            mlab.show()
+            # mlab.show()
+            return figm
 
     def cut_by_plane(self, plane=None, show_result=False):
         if plane is None:
