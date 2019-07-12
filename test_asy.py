@@ -478,7 +478,8 @@ if __name__ == "__main__":
     # print("")
 
 
-    print(b)
+    a=np.asarray((1,2,3))/255
+    print(a.tolist())
     # print(list(set(points)))
 
 
