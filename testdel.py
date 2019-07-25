@@ -42,13 +42,15 @@ import open3d as o3d
 # print('pc_tile:', pc_tile.shape)
 # print('pc_local_eigs:', pc_local_eigs.shape)
 # print('pc_label:', pc_label.shape)
-
-j = 5.69
-t1 = time.time()
-for i in range(1000000):
-    j = j * i
-t2 = time.time()
-time.sleep(10)
-t3 = time.time()
-print('t2-t1',t2-t1)
-print('t3-t2',t3-t2)
+#
+# j = 5.69
+# t1 = time.time()
+# for i in range(1000000):
+#     j = j * i
+# t2 = time.time()
+# time.sleep(10)
+# t3 = time.time()
+# print('t2-t1',t2-t1)
+# print('t3-t2',t3-t2)
+h5file = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_ns.h5')
+print(h5file['train_labels'][...])

@@ -51,9 +51,9 @@ def tf_euler_pos_2_homo(batch_input):
                              tf.sin(theta), tf.constant(0.0, shape=[batch, 1]), tf.cos(theta)], axis=1), shape=[batch, 3, 3]), trainable=False)
 
     rotation_z = tf.Variable(initial_value=tf.reshape(tf.concat([tf.cos(phi), -tf.sin(phi), tf.constant(0.0, shape=[batch, 1]),
-                           tf.sin(phi), tf.cos(phi), tf.constant(0.0, shape=[batch, 1]),
-                           tf.constant(1.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
-                           tf.constant(0.0, shape=[batch, 1])], axis=1), shape=(batch, 3, 3)), trainable=False)
+                             tf.sin(phi), tf.cos(phi), tf.constant(0.0, shape=[batch, 1]),
+                             tf.constant(1.0, shape=[batch, 1]), tf.constant(0.0, shape=[batch, 1]),
+                             tf.constant(0.0, shape=[batch, 1])], axis=1), shape=(batch, 3, 3)), trainable=False)
 
     rotation = tf.matmul(tf.matmul(rotation_x, rotation_y), rotation_z)  # B x 3 x 3
     transition = tf.concat([pos_x, pos_y, pos_z], axis=1)    # Bx3x1
@@ -86,22 +86,10 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     #                     scope='hconv111', bn_decay=bn_decay, weight_decay=0.0)     #BxNx1x64 4 variables of weight bises beta gamma
 
     point_wise_1 = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
-                                          activation=None, kernel_size=[1, 3])(net)  # b x nb_key_pts x 1 x 256
+                                          activation=None, kernel_size=[1, 3])(net)  # b x nb_key_pts x 1 x 64
     test_layer_output1 = point_wise_1
     point_wise_1 = tf.keras.layers.BatchNormalization()(point_wise_1, training=is_training)
     point_wise_1 = tf.keras.activations.relu(point_wise_1)
-
-    #net = tf_util.conv2d(net, 128, [1, 1], padding='VALID', stride=[1, 1], bn=True, is_training=is_training,
-    #                     scope='hconv12', bn_decay=bn_decay, weight_decay=0.0)
-    # point_wise_2 = tf_util.conv2d(point_wise_1, 128, [1, 1],
-    #                              padding='VALID', stride=[1, 1],
-    #                              bn=True, is_training=is_training,
-    #                              scope='homo_conv2', bn_decay=bn_decay, activation_fn=tf.nn.relu)  # Bxnx1x128
-    #
-    # point_wise_3 = tf_util.conv2d(point_wise_2, 512, [1, 1],
-    #                              padding='VALID', stride=[1, 1],
-    #                              bn=True, is_training=is_training,
-    #                              scope='homo_conv3', bn_decay=bn_decay, activation_fn=tf.nn.relu)  # Bxnx1x512
 
     point_wise_2 = tf.keras.layers.Conv2D(strides=(1, 1), filters=256, padding='valid',
                                           activation=None, kernel_size=[1, 1])(point_wise_1)  # b x nb_key_pts x 1 x 256
@@ -148,28 +136,13 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size * int(1024 * 0.1), -1])  # b*nb_key_pts  x 256
         # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
         #                                             bn_decay=bn_decay, weight_decay=0.0, scope='ldense1')
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense1')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(512, activation=tf.nn.relu, name='ldense1')(point_cloud_local)
         point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
         point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense2')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(512, activation=tf.nn.relu, name='ldense2')(point_cloud_local)
         point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
         point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense3')(point_cloud_local)
-        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
-        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense4')(point_cloud_local)
-        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
-        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense5')(point_cloud_local)
-        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
-        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense6')(point_cloud_local)
-        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
-        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense7')(point_cloud_local)
-        point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
-        point_cloud_local = tf.keras.activations.relu(point_cloud_local)
-        point_cloud_local = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='ldense8')(point_cloud_local)
+        point_cloud_local = tf.keras.layers.Dense(512, activation=tf.nn.relu, name='ldense8')(point_cloud_local)
         point_cloud_local = tf.keras.layers.BatchNormalization()(point_cloud_local, training=is_training)
         point_cloud_local = tf.keras.activations.relu(point_cloud_local)
         # point_cloud_local = tf_util.fully_connected(point_cloud_local, 1024, bn=True, is_training=is_training,
@@ -194,11 +167,17 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
         point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 1024
         net = tf.concat([net, point_cloud_local], axis=-1)  # b x 1024
 
-    intersection = tf.layers.dense(net, 512, activation=tf.nn.relu)
-    net_q = tf.layers.dense(intersection, 512, activation=tf.nn.relu)
+    intersection = tf.layers.dense(net, 1024, activation=tf.nn.relu)
+    net_q = tf.layers.dense(intersection, 1024, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 1024, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 1024, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 512, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 256, activation=tf.nn.relu)
-    net_q = tf.layers.dense(net_q, 64, activation=tf.nn.relu)  # BX64
+    net_q = tf.layers.dense(net_q, 128, activation=tf.nn.relu)  # BX64
+
     net_t = tf.layers.dense(intersection, 512, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 256, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 64, activation=tf.nn.relu)
     quaternion = tf.layers.dense(net_q, 4)
