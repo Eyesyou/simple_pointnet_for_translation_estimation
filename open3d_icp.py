@@ -59,11 +59,11 @@ def icp_two_pc(source, target, draw_result=False, point2plane=False):
         target.points = o3d.Vector3dVector(tmp)
 
     if point2plane:
-        result = o3d.registration_icp(source, target, 0.02,
+        result = o3d.registration_icp(source, target, 0.002,
                                       estimation_method=o3d.TransformationEstimationPointToPlane())
     else:
         print('using point to point icp method')
-        result = o3d.registration_icp(source, target, 0.02,
+        result = o3d.registration_icp(source, target, 0.002,
                                       estimation_method=o3d.TransformationEstimationPointToPoint())
     transformation = result.transformation
     print('result transformation:', transformation)
@@ -156,8 +156,8 @@ def apply_np_homo(batch_point_cloud, homo='random'):
 
 
 if __name__ == "__main__":
-    source = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/bearing pedestal_ps.ply")
-    target = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/0.ply")
+    source = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/segmentationed/cloud_cluster_0.ply")
+    target = o3d.read_point_cloud("/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object/hammer_ps.ply")
     result = icp_two_pc(source, target, draw_result=True)
     print('transformation is :', result)
     # threshold = 0.02

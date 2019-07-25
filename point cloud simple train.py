@@ -18,7 +18,6 @@ from matplotlib import pyplot as plt
 from transform_nets import homo_transform_net, input_transform_net, feature_transform_net
 from plot4experiment import vis_first_layer , plot_embedding_3d
 from read_data import get_local_eig_np
-
 from mayavi import mlab
 LOG_FOUT = open('log_train.txt', 'w')
 
@@ -38,17 +37,17 @@ init_learning_rate = 0.0002
 decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
 decay_rate = 0.9
 decay_step = int(np.random.randint(1000, 1001))
-decay_step = 1000
+decay_step = 2000
 batchsize = 50
 max_epoch = 100  # 200
 nb_classes = 13
 nb_points = 1024
 key_pts_percentage = 0.1
 pc_scale_factor = 1
-tile = True
+tile = False
 tile_size = 100   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/normalized_with_rectrl.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_ns.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # n * 1024 * 3
 pc_local_eigs = readh5['train_set_local'][:]  # n * 102 * 9
@@ -59,8 +58,8 @@ if tile:
     pc_local_eigs = np.tile(pc_local_eigs, (tile_size, 1, 1))
     pc_label = np.tile(pc_label, (tile_size, ))
 
-quaternion_range = [0, 0.5]
-translation_range = [-550, 550]
+quaternion_range = [0.5, 1]
+translation_range = [-10, 10]
 
 pc_tile *= pc_scale_factor   # for scale
 
@@ -306,7 +305,7 @@ def train(model_name, use_local=False):
             log_string('**** EPOCH %03d ****' % (epoch))
             sys.stdout.flush()
 
-            train_one_epoch(sess, ops, train_writer, epoch, shuffle_data=False)  # trainning and evaluation is starting simultaneous
+            train_one_epoch(sess, ops, train_writer, epoch, shuffle_data=False)  # trainning and evaluation is starting simultaneously
             eval_one_epoch(sess, ops, test_writer, epoch)  # after training, evaluation is begin.
 
             # Save the variables to disk.
@@ -681,7 +680,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     return prediction, end_points #net is the final prediction of 4 classes
 
 
-def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, pose_weight=10):
+def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=100, pose_weight=1):
     """
 
     :param pred: B*NUM_CLASSES,
@@ -694,7 +693,7 @@ def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, p
     """
 
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=label)   # pred:(Bx4) label:(B,),loss:(B,),originally logits = label, label=pred
-    classify_loss = tf.reduce_mean(loss)   # you need mean
+    classify_loss = tf.reduce_mean(loss)   # you need average the losses
     tf.summary.scalar('classify loss', classify_loss)
 
     # Enforce the transformation as orthogonal matrix
@@ -710,9 +709,8 @@ def get_loss(pred, label, end_points, reg_weight=0.0001, rotation_weight=1000, p
     tf.summary.scalar('mat loss', mat_diff_loss)
 
     if pose_weight > 100000:
-        final_loss = trans_diff
+        final_loss = trans_diff  # no classification considered
     else:
-
         final_loss = tf.add(classify_loss, mat_diff_loss * reg_weight)
         final_loss = tf.add(final_loss, trans_diff*pose_weight, name="final_loss")   # if trans_diff * 0.0 means end-to-end trainning
 
@@ -740,7 +738,7 @@ def train_one_epoch(sess, ops, train_writer, epoch, shuffle_data=True):
     """ ops: dict mapping from string to tf ops """
     is_training = True
 
-    current_data = pc_tile  # (20000) x 1024 x 3 numpy array
+    current_data = pc_tile  # (n) x 1024 x 3 numpy array
     current_local_eig = pc_local_eigs   # (20000) x 102 x 9 numpy array
     current_label = pc_label
     if shuffle_data:
@@ -1175,7 +1173,7 @@ def np_quat_pos_2_homo(batch_input):
 
 if __name__ == "__main__":
 
-    train(model_name="object_real_partial3.ckpt", use_local=True)
+    train(model_name="object_ns1.ckpt", use_local=True)
     # mst = []  # record inference time
     # for i in range(9):
     #     mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)

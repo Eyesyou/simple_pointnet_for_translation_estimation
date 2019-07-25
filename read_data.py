@@ -14,7 +14,7 @@ import tensorflow as tf
 
 
 def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_data=True,
-              nb_types=4, show_result=False, normalize=True):
+              nb_types=4, show_result=False, normalize=True, shuffle=True):
     """
     transform the txt point clouds into h5py dataset for simplicity. data augmentation of projection is implemented here
     :param save_path:
@@ -99,6 +99,14 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
     hdf5_file.create_dataset('train_set', train_set_shape, np.float32)  # be careful about the dtype
     hdf5_file.create_dataset('train_labels', train_label_shape, np.uint8)
     hdf5_file.create_dataset('train_set_local', train_set_local_shape, np.float32)
+    if shuffle:
+
+        idx = np.arange(nb_types*n)
+        np.random.shuffle(idx)
+        pc_tile = pc_tile[idx, ...]
+        pc_label = pc_label[idx, ...]
+        pc_key_feature =pc_key_feature[idx, ...]
+
     hdf5_file["train_set"][...] = pc_tile
     hdf5_file["train_labels"][...] = pc_label
     hdf5_file["train_set_local"][...] = pc_key_feature
@@ -732,9 +740,9 @@ def txt2normalply(txt_path, write_path='/ply/'):
 
 
 if __name__ == "__main__":
-    # print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly/real_single_1024n_2.h5',
-    #           base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/data/testply/scanonly',
-    #           normalize=True, train_data=False, n=5000, nb_types=8))
+    print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_ns.h5',
+              base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection',
+              normalize=True, train_data=True, shuffle=True, n=5000, nb_types=8))
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -754,10 +762,10 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
 
-    for i in range(1, 9):
-       augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i),
-                     pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i)+'/final.ply',
-                     add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
+    # for i in range(1, 9):
+    #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i),
+    #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i)+'/final.ply',
+    #                  add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
 
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')

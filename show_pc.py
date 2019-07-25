@@ -1296,7 +1296,7 @@ class PointCloud:
         :param show_result:
         :return: region_growing centers
         """
-        self.compute_key_points(rate=range_rate, percentage=percentage*4)
+        self.compute_key_points(rate=range_rate, percentage=percentage*5)   # only salient points were clusterd
         centers = region_growing_cluster_keypts(self.position[self.keypoints, :], nb_pts=int(self.nb_points*percentage),
                                                 pts_range=self.range, inter_dist=inter_dist, intra_dist=intra_dist)
 
