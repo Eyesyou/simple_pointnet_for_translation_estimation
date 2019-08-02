@@ -40,7 +40,7 @@ decay_step = int(np.random.randint(1000, 1001))
 decay_step = 20000
 batchsize = 50
 max_epoch = 100  # 200
-nb_classes = 13
+nb_classes = 8
 nb_points = 1024
 key_pts_percentage = 0.1
 pc_scale_factor = 1
@@ -522,7 +522,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     """
     Classification PointNet, input is BxNx3, output Bx4
     :param point_cloud:
-    :param point_cloud_local:
+    :param point_cloud_local: B x nb_keypts x 9
     :param is_training:
     :param bn_decay:
     :param apply_rand: whether to apply random transformation for data augmentation
@@ -555,43 +555,10 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     else:
         point_cloud_jitterd = point_cloud
 
-    with tf.variable_scope('homo_transform_net') as sc:
-        transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
-                                                                        is_training, bn_decay=bn_decay,
-                                                                        use_local= use_local)  # B x 7 predicted transformation
-    end_points['test_layer1'] = test_layer1
-    end_points['test_layer2'] = test_layer2
-    #transformation_7 = tf.concat([tf.slice(ran_pos, [0, 0], [batch_size, 1]), -1*tf.slice(ran_pos, [0, 1], [batch_size, 3]),
-    #                              tf.slice(transformation_7, [0, 4], [batch_size, 3])], axis=1)  # leave the rotation unchanged
-    end_points['predict_pos'] = transformation_7
-    transformation = tf_quat_pos_2_homo(transformation_7)  # Bx4x4
-
-    end_points['compare'] = [transformation_7, ran_pos]  # compare the predicted transformation and ground true transformation
-
-    end_points['trans_dis'] = compute_pos_distance(transformation_7, ran_pos)  # add by asy, to compute the distance between predict and ground truth
-
-    tf.summary.scalar('ang_dis', end_points['trans_dis'][0])
-    tf.summary.scalar('pos_dis', end_points['trans_dis'][1])
-
-    point_cloud_transformed = apply_homo_to_pc(point_cloud_jitterd, transformation)  # apply this for shape transformation.
-    # point_cloud_transformed = point_cloud_jitterd                                    # if you don't apply this
-
-    end_points['opc'] = point_cloud              # original point cloud
-    end_points['rpc'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
-
-    with tf.variable_scope('input_transform_net') as sc:
-        transform3 = input_transform_net(point_cloud_transformed, is_training, bn_decay, K=3)
-        # origin Bx3x3 transform
-
-    point_cloud_transformed = tf.matmul(point_cloud_transformed, transform3)   # applay or not apply this original input transform net
-    # B x n x3 mul Bx3x3 = B x n x 3
-
-    input_image = tf.expand_dims(point_cloud_transformed, -1)  # become Bxnx3x1
-
-    with tf.variable_scope('main_net') as sc:
-
+    with tf.variable_scope('main_net1') as sc:
+        input_pointcloud = tf.expand_dims(point_cloud_jitterd, -1)  # become Bxnx3x1
         net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
-                                     activation=None, kernel_size=[1, 3], name='conv1')(input_image)
+                                     activation=None, kernel_size=[1, 3], name='conv1')(input_pointcloud)
         net = tf.keras.layers.BatchNormalization()(net, training=is_training)
         net = tf.keras.activations.relu(net)
         net = tf.keras.layers.Conv2D(strides=(1, 1), filters=128, padding='valid',
@@ -603,20 +570,100 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         net = tf.keras.layers.BatchNormalization()(net, training=is_training)
         net = tf.keras.activations.relu(net)
 
-
-    with tf.variable_scope('feature_transform_net') as sc:
-        transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
-
-    end_points['transform'] = transformation_feature  #note here the transform is dimension of 64
+    # with tf.variable_scope('feature_transform_net') as sc:
+    #     transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
+    #
+    # end_points['transform'] = transformation_feature  #note here the transform is dimension of 64
 
     #net_transformed = tf.matmul(tf.squeeze(net), transformation_feature) #Bx1024x64  matmul Bx64x64 equals Bx1024x64
-
-    net_transformed = net            #not apply feature transform
 
     #net_transformed = tf.expand_dims(net_transformed, [2])  #Bx1024x1x64
 
     #  classification network
-    with tf.variable_scope('main_net') as sc:
+
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv4')(net)  # b x nb_key_pts x 1 x 256
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        # end_points['first_layer_output'] = tf.reshape(net, shape=[batch_size, 1024, 64])  # B X 1024 X 64
+        # glorot_uniform also known as xavier uniform initializer.
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=128, padding='valid', kernel_initializer='glorot_uniform',
+                                     activation=None, kernel_size=[1, 1], name='conv4')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=256, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv5')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=512, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv6')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=1024, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv7')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
+        net = tf.keras.layers.MaxPool2D(pool_size=(num_point, 1), padding='valid')(net)
+        net = tf.reshape(net, [batch_size, -1])  # Bx1024
+
+        net = tf.keras.layers.Dense(1024, activation=tf.nn.relu, name='fc1')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
+        net = tf.keras.layers.Dropout(rate=0.7, name='dp1')(net, training=is_training)
+        net = tf.keras.layers.Dense(512, activation=tf.nn.relu, name='fc2')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Dense(256, activation=tf.nn.relu, name='fc3')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+
+        # end_points['classification_output'] = tf.reshape(net, shape=[batch_size, -1])  #B X 256
+        if use_local:
+            # b x nb_key_pts x 9 x 1 , 9 because multi-scale
+            point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)
+            point_cloud_local_feature = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
+            point_cloud_local_feature = tf.layers.conv2d(inputs=point_cloud_local_feature, filters=64,
+                                                 kernel_size=[1, 9])  # b x nb_key_pts x 1 x 64
+            point_cloud_local_feature = tf.layers.conv2d(inputs=point_cloud_local_feature, filters=256,
+                                                 kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
+            point_cloud_local_feature = tf.layers.max_pooling2d(point_cloud_local_feature,
+                                                        pool_size=(int(nb_points * key_pts_percentage), 1),
+                                                        strides=1)  # b x 1 x 1 x 256
+            point_cloud_local_feature = tf.reshape(point_cloud_local_feature, [batch_size, -1])  # b x 256
+
+            net = tf.concat([net, point_cloud_local_feature], axis=-1)   # Bx256
+            prediction = tf.keras.layers.Dense(nb_classes, name='fc7')(net)
+
+        else:
+            prediction = tf.keras.layers.Dense(nb_classes, name='train_without_local_fc7')(net)
+
+    with tf.variable_scope('homo_transform_net1') as sc:
+        transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
+                                                                        is_training, classification_info=prediction,
+                                                                        use_local=use_local)  # B x 7 predicted transformation
+
+        transformation = tf_quat_pos_2_homo(transformation_7)  # Bx4x4
+
+        point_cloud_transformed = apply_homo_to_pc(point_cloud_jitterd,
+                                                   transformation)  # apply this for shape transformation.
+
+    with tf.variable_scope('main_net2') as sc:
+        input_pointcloud = tf.expand_dims(point_cloud_transformed, -1)  # become Bxnx3x1
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
+                                     activation=None, kernel_size=[1, 3], name='conv1')(input_pointcloud)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=128, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv2')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
+        net = tf.keras.layers.Conv2D(strides=(1, 1), filters=256, padding='valid',
+                                     activation=None, kernel_size=[1, 1], name='conv3')(net)
+        net = tf.keras.layers.BatchNormalization()(net, training=is_training)
+        net = tf.keras.activations.relu(net)
 
         net = tf.keras.layers.Conv2D(strides=(1, 1), filters=64, padding='valid',
                                      activation=None, kernel_size=[1, 1], name='conv4')(net)  # b x nb_key_pts x 1 x 256
@@ -661,26 +708,51 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         if use_local:
             # b x nb_key_pts x 9 x 1 , 9 because multi-scale
             point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)
-            point_cloud_local = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=64,
+            point_cloud_local_feature = tf.reshape(point_cloud_local, [batch_size, int(1024*0.1), 9, 1])
+            point_cloud_local_feature = tf.layers.conv2d(inputs=point_cloud_local_feature, filters=64,
                                                  kernel_size=[1, 9])  # b x nb_key_pts x 1 x 64
-            point_cloud_local = tf.layers.conv2d(inputs=point_cloud_local, filters=256,
+            point_cloud_local_feature = tf.layers.conv2d(inputs=point_cloud_local_feature, filters=256,
                                                  kernel_size=[1, 1])  # b x nb_key_pts x 1 x 256
-            point_cloud_local = tf.layers.max_pooling2d(point_cloud_local,
+            point_cloud_local_feature = tf.layers.max_pooling2d(point_cloud_local_feature,
                                                         pool_size=(int(nb_points * key_pts_percentage), 1),
                                                         strides=1)  # b x 1 x 1 x 256
-            point_cloud_local = tf.reshape(point_cloud_local, [batch_size, -1])  # b x 256
+            point_cloud_local_feature = tf.reshape(point_cloud_local_feature, [batch_size, -1])  # b x 256
 
-            net = tf.concat([net, point_cloud_local], axis=-1)   # Bx256
+            net = tf.concat([net, point_cloud_local_feature], axis=-1)   # Bx256
             prediction = tf.keras.layers.Dense(nb_classes, name='fc7')(net)
 
         else:
             prediction = tf.keras.layers.Dense(nb_classes, name='train_without_local_fc7')(net)
 
+    with tf.variable_scope('homo_transform_net2') as sc:
+        transformation_7, test_layer1, test_layer2 = homo_transform_net(point_cloud_jitterd, point_cloud_local,
+                                                                        is_training, classification_info=prediction,
+                                                                        use_local=use_local)  # B x 7 predicted transformation
+        end_points['test_layer1'] = test_layer1
+        end_points['test_layer2'] = test_layer2
+
+        end_points['predict_pos'] = transformation_7
+        transformation = tf_quat_pos_2_homo(transformation_7)  # Bx4x4
+
+        end_points['compare'] = [transformation_7,
+                                 ran_pos]  # compare the predicted transformation and ground true transformation
+
+        end_points['trans_dis'] = compute_pos_distance(transformation_7,
+                                                       ran_pos)  # add by asy, to compute the distance between predict and ground truth
+
+        tf.summary.scalar('ang_dis', end_points['trans_dis'][0])
+        tf.summary.scalar('pos_dis', end_points['trans_dis'][1])
+
+        point_cloud_transformed = apply_homo_to_pc(point_cloud_jitterd,
+                                                   transformation)  # apply this for transformation.
+
+        end_points['opc'] = point_cloud  # original point cloud
+        end_points['rpc'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
+
     return prediction, end_points #net is the final prediction of 4 classes
 
 
-def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=100, pose_weight=1):
+def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=1000, pose_weight=1):
     """
 
     :param pred: B*NUM_CLASSES,
@@ -697,12 +769,13 @@ def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=100, po
     tf.summary.scalar('classify loss', classify_loss)
 
     # Enforce the transformation as orthogonal matrix
-    transform = end_points['transform']  # BxKxK the feature transformation, did not used it anymore
-    K = transform.get_shape()[1].value  # K=64
-
-    mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1]))  # BxKxK
-    mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
-    mat_diff_loss = tf.nn.l2_loss(mat_diff)  # the difference with identity matrix
+    # transform = end_points['transform']  # BxKxK the feature transformation, did not used it anymore
+    # K = transform.get_shape()[1].value  # K=64
+    #
+    # mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0, 2, 1]))  # BxKxK
+    # mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
+    # mat_diff_loss = tf.nn.l2_loss(mat_diff)  # the difference with identity matrix
+    mat_diff_loss = 0
 
     trans_diff = rotation_weight * end_points['trans_dis'][0] + end_points['trans_dis'][1]  # rotation and translation
 
@@ -1172,8 +1245,7 @@ def np_quat_pos_2_homo(batch_input):
 
 
 if __name__ == "__main__":
-
-    train(model_name="object_ns1.ckpt", use_local=True)
+    train(model_name="object_ns6.ckpt", use_local=True)
     # mst = []  # record inference time
     # for i in range(9):
     #     mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)

@@ -63,13 +63,13 @@ def tf_euler_pos_2_homo(batch_input):
     return batch_out
 
 
-def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=None, use_local=True):
+def homo_transform_net(point_cloud, point_cloud_local, is_training, classification_info=None, use_local=True):
     """
     perform skip link aggregation
     :param point_cloud:   Input (XYZ) Transform Net, input is BxNx3
     :param point_cloud_local:
     :param is_training:
-    :param bn_decay: batch normalization decay
+    :param classification_info: classification infomation, size is B x M
     :param use_local:
     :return: Transformation matrix of size BX7 ,K=3 in ordinary
     """
@@ -122,10 +122,13 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     integrated = tf.expand_dims(integrated, axis=1)   # Bx1x1x256
     integrated = tf.tile(integrated, [1, 1024, 1, 1])   # BxNx1x256
 
-    net = tf.concat([point_wise_1, point_wise_2, point_wise_3, integrated], axis=-1)    # BxNx1x(64+128+512+ 256)
+    net = tf.concat([point_wise_1, point_wise_2, point_wise_3, integrated], axis=-1)    # BxNx1x(64+128+512+256)
     net = tf_util.max_pool2d(net, [num_point, 1], padding='VALID', scope='hmaxpool2')  # BxNx1x1024
     net = tf.reshape(net, [batch_size, -1])  # B x X
-    net = tf.layers.dense(net, 512)
+    net = tf.layers.dense(net, 512)  # B x 512
+
+    if classification_info is not None:
+        net = tf.concat([net, classification_info], axis=-1)  # B x (512+M)
 
     if use_local:
         point_cloud_local = tf.expand_dims(point_cloud_local, axis=-1)  # b x nb_key_pts x 9 x 1 , 9 because multi-scale
@@ -170,16 +173,19 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, bn_decay=Non
     intersection = tf.layers.dense(net, 1024, activation=tf.nn.relu)
     net_q = tf.layers.dense(intersection, 1024, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 1024, activation=tf.nn.relu)
-    net_q = tf.layers.dense(net_q, 1024, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 512, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 512, activation=tf.nn.relu)
+    net_q = tf.layers.dense(net_q, 256, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 256, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 128, activation=tf.nn.relu)  # BX64
 
-    net_t = tf.layers.dense(intersection, 512, activation=tf.nn.relu)
+    net_t = tf.layers.dense(intersection, 1024, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 1024, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 256, activation=tf.nn.relu)
-    net_t = tf.layers.dense(net_t, 64, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 256, activation=tf.nn.relu)
+    net_t = tf.layers.dense(net_t, 128, activation=tf.nn.relu)
     quaternion = tf.layers.dense(net_q, 4)
     translation = tf.layers.dense(net_t, 3)
     transform_7 = tf.concat([quaternion, translation], axis=1)
