@@ -35,9 +35,9 @@ LOG_FOUT = open('log_train.txt', 'w')
 init_learning_rate = float(10 ** -np.random.randint(-1, 8) * np.random.random(1))
 init_learning_rate = 0.0002
 decay_rate = float(np.random.random(1) * 10 ** -np.random.randint(0, 2))
-decay_rate = 0.9
+decay_rate = 0.98
 decay_step = int(np.random.randint(1000, 1001))
-decay_step = 20000
+decay_step = 40000
 batchsize = 50
 max_epoch = 100  # 200
 nb_classes = 8
@@ -58,7 +58,7 @@ if tile:
     pc_local_eigs = np.tile(pc_local_eigs, (tile_size, 1, 1))
     pc_label = np.tile(pc_label, (tile_size, ))
 
-quaternion_range = [0.5, 1]
+quaternion_range = [0.8, 1]
 translation_range = [-10, 10]
 
 pc_tile *= pc_scale_factor   # for scale
@@ -752,7 +752,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
     return prediction, end_points #net is the final prediction of 4 classes
 
 
-def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=1000, pose_weight=1):
+def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=100, pose_weight=1):
     """
 
     :param pred: B*NUM_CLASSES,
@@ -1245,7 +1245,7 @@ def np_quat_pos_2_homo(batch_input):
 
 
 if __name__ == "__main__":
-    train(model_name="object_ns6.ckpt", use_local=True)
+    train(model_name="object_ns8.ckpt", use_local=True)
     # mst = []  # record inference time
     # for i in range(9):
     #     mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)

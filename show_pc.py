@@ -417,6 +417,10 @@ class OctNode:
 
 class PointCloud:
     def __init__(self, one_pointcloud):
+        """
+
+        :param one_pointcloud: .ply, .txt format or numpy array to instanciate a 3D point cloud object.
+        """
         if isinstance(one_pointcloud, str):  # ply file path
             if os.path.splitext(one_pointcloud)[-1] == '.ply':
                 plydata = PlyData.read(one_pointcloud)
