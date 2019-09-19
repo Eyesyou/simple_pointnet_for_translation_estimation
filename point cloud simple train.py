@@ -8,6 +8,7 @@ import importlib
 import time
 import os
 import sys
+import tables
 import tf_util
 import random
 from sklearn import preprocessing
@@ -39,7 +40,7 @@ decay_rate = 0.98
 decay_step = int(np.random.randint(1000, 1001))
 decay_step = 40000
 batchsize = 50
-max_epoch = 100  # 200
+max_epoch = 50  # 200
 nb_classes = 8
 nb_points = 1024
 key_pts_percentage = 0.1
@@ -47,7 +48,7 @@ pc_scale_factor = 1
 tile = False
 tile_size = 100   # total
 
-readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_ns.h5')  # file path
+readh5 = h5py.File('/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_s.h5')  # file path
 
 pc_tile = readh5['train_set'][:]  # n * 1024 * 3
 pc_local_eigs = readh5['train_set_local'][:]  # n * 102 * 9
@@ -58,7 +59,7 @@ if tile:
     pc_local_eigs = np.tile(pc_local_eigs, (tile_size, 1, 1))
     pc_label = np.tile(pc_label, (tile_size, ))
 
-quaternion_range = [0.8, 1]
+quaternion_range = [0, 1]
 translation_range = [-10, 10]
 
 pc_tile *= pc_scale_factor   # for scale
@@ -92,7 +93,7 @@ shade3 = tuple(shade[2, :].tolist())
 light4 = tuple(light[3, :].tolist())
 shade4 = tuple(shade[3, :].tolist())
 
-colorset = [[light4, light2], [shade2, light2], [shade3, light3], [shade4, light4]]
+colorset = [[shade1, light1], [shade2, light2], [shade3, light3], [shade4, light4]]
 print('colorset to plot point clouds:', colorset)
 # colorset = [[plt.cm.Set1(i)[:3], tuple(np.asarray(plt.cm.Set1(i)[:3])*0.7)] for i in range(8)]
 
@@ -371,7 +372,7 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
     saver.restore(sess, model_path)
     model_restore_end = time.clock()
     mode_restore_time = model_restore_end-model_restore_start
-    print('model restore time is :', model_restore_end-model_restore_start)
+    print('model restore time is :', mode_restore_time)
     log_string("Model restored.")
 
     # sess.run(init, {is_training_pl: False})
@@ -411,8 +412,8 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             # pc_tile = points   # todo once define pc_tile here, pc_tile becomes local variable
             # pc_local_eigs = get_local_eig_np(points)   # todo once define pc_local_eigs here,pc_tile becomes local variable
 
-        rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
-        # rand_idx = np.array((j, ))
+        # rand_idx = np.random.choice(pc_tile.shape[0], test_batchsize)   # randomly choose a batchsize of data
+        rand_idx = np.array((j, ))
         tsne_label[j] = pc_label[rand_idx]  # (b, )
         point_clouds[j] = pc_tile[rand_idx, :, :]  # (b x nb_points x 3)
         feed_dict = {ops['pointclouds_pl']: pc_tile[rand_idx, :, :],   # one point cloud at a time
@@ -451,7 +452,8 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
         print('***********')
         # print('pred_class:', pred_class, 'total loss: ', total_loss, 'random_pos:', ran_pos,
         #       'predicted pos:', predict_pos, 'pose distance:', trans_dis)
-
+        print('predicted pose shape:', np.shape(predict_pos))
+        print('random pose shape:', np.shape(ran_pos))
         if show_result:
             # rand_trans = np.random.random([test_batchsize, 3])*0   # todo manually ajust the translation range
             # rand_trans = np.expand_dims(rand_trans, axis=1)
@@ -459,10 +461,24 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
             # 
             # opc += rand_trans
             # rpc += rand_trans
+            posefilename='pose.h5'
+            if not os.path.exists(posefilename):
+                posefile = tables.open_file(posefilename, mode='w')
+                atom = tables.Float64Atom()
+                ran_posarr = posefile.create_earray(posefile.root, 'random_pose', atom, (0, 7))
+                pdt_posarr = posefile.create_earray(posefile.root, 'predict_pose', atom, (0, 7))
+                ran_posarr.append(ran_pos)
+                pdt_posarr.append(predict_pos)
+                posefile.close()
+            else:
+                posefile = tables.open_file(posefilename, mode='a')
+                posefile.root.random_pose.append(ran_pos)
+                posefile.root.predict_pose.append(predict_pos)
+                posefile.close()
 
-            fig = show_pc.show_trans(mpc, rpc, colorset=colorset, scale=2, returnfig=True)  # simulate the ramdon
+            fig = show_pc.show_trans(mpc, rpc, colorset=colorset[j % 4:], scale=2, returnfig=True)  # simulate the ramdon
 
-            filename1 = 'before_alignment1.png'
+            filename1 = 'poseestimation/before_alignment1.png'
             while(True):
                 if os.path.exists(filename1):
                     filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
@@ -470,13 +486,14 @@ def inference(model_path, pcpath='test_dataset.h5', show_result=False, use_local
                 break
             f = mlab.gcf()  # this two line for mlab.screenshot to work
             f.scene._lift()
+
             mlab.savefig(filename=filename1)
             print('before image saved')
             mlab.close()
 
-            fig = show_pc.show_trans(opc, rpc, colorset=colorset, scale=2, returnfig=True)  # after recover
+            fig = show_pc.show_trans(opc, rpc, colorset=colorset[j % 4:], scale=2, returnfig=True)  # after recover
 
-            filename1='after_alignment1.png'
+            filename1='poseestimation/after_alignment1.png'
             while(True):
                 if os.path.exists(filename1):
                     filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1])+1) + '.png'
@@ -569,15 +586,6 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
                                      activation=None, kernel_size=[1, 1], name='conv3')(net)
         net = tf.keras.layers.BatchNormalization()(net, training=is_training)
         net = tf.keras.activations.relu(net)
-
-    # with tf.variable_scope('feature_transform_net') as sc:
-    #     transformation_feature = feature_transform_net(net, is_training, bn_decay, K=64)  # B X 64 X 64
-    #
-    # end_points['transform'] = transformation_feature  #note here the transform is dimension of 64
-
-    #net_transformed = tf.matmul(tf.squeeze(net), transformation_feature) #Bx1024x64  matmul Bx64x64 equals Bx1024x64
-
-    #net_transformed = tf.expand_dims(net_transformed, [2])  #Bx1024x1x64
 
     #  classification network
 
@@ -749,7 +757,7 @@ def get_model(point_cloud, point_cloud_local, is_training, bn_decay=None, apply_
         end_points['opc'] = point_cloud  # original point cloud
         end_points['rpc'] = point_cloud_transformed  # point_cloud_jitterd for original,point_cloud_transformed for compare
 
-    return prediction, end_points #net is the final prediction of 4 classes
+    return prediction, end_points # net is the final prediction of 4 classes
 
 
 def get_loss(pred, label, end_points, reg_weight=0.0000, rotation_weight=100, pose_weight=1):
@@ -1245,11 +1253,11 @@ def np_quat_pos_2_homo(batch_input):
 
 
 if __name__ == "__main__":
-    train(model_name="object_ns8.ckpt", use_local=True)
+    # train(model_name="a=1_b=100.ckpt", use_local=True)
     # mst = []  # record inference time
     # for i in range(9):
     #     mst.append(inference(os.path.join('tmp', "object_real_partial2.ckpt"), use_local=True, show_result=False, times=1, test_batchsize=1))  # test time)
     # print(mst)
-    # inference(os.path.join('tmp', "object8_2.ckpt"), use_local=True, show_result=False, times=1, vis_feature=True)
+    inference(os.path.join('tmp', "a=10_b=10.ckpt.ckpt"), use_local=True, show_result=False, times=1, vis_feature=False, test_batchsize=1 )
     # inference(os.path.join('tmp', "object8.ckpt"), use_local=True, show_result=False, times=10, vis_tsne=True, test_batchsize=50)
     # LOG_FOUT.close()

@@ -73,6 +73,14 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
         ply_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply' or
                     os.path.splitext(i)[1] == '.txt']
         n = len(ply_list)
+        less_than_th = []
+        for i,j in enumerate(ply_list):
+            pc = PointCloud(j)
+            if pc.nb_points < 1024:
+                less_than_th.append(i)
+
+        n = n-len(less_than_th)
+        print("there are: ,",n,' point clouds with # of points available')
         pc_label = np.arange(n)
         train_set_shape = (n, 1024, 3)
         train_set_local_shape = (n, 102, 9)
@@ -82,18 +90,21 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
         pc_key_feature = np.empty(shape=(n, int(1024 * 0.1), 9))  # key feature space, 102=1024*0.1,
 
         for i, j in enumerate(ply_list):
-            print(j)
-            start_time = time.clock()
-            mypc = PointCloud(j)
-            if normalize:
-                mypc.normalize()
-            expand = np.expand_dims(mypc.position, axis=0)
-            pc_tile[i, :, :] = expand
-            pc_key_eig = get_local_eig_np(expand, useiss=False)
-            end_time = time.clock()
-            compute_time.append([end_time-start_time])
-            if use_key_feature:
-                pc_key_feature[i, :, :] = np.squeeze(pc_key_eig)
+            if i not in less_than_th:
+                print(j)
+                start_time = time.clock()
+                mypc = PointCloud(j)
+                if mypc.nb_points > 1024:
+                    mypc.down_sample(number_of_downsample=1024)
+                    if normalize:
+                        mypc.normalize()
+                    expand = np.expand_dims(mypc.position, axis=0)
+                    pc_tile[i, :, :] = expand
+                    pc_key_eig = get_local_eig_np(expand, useiss=False)
+                    end_time = time.clock()
+                    compute_time.append([end_time-start_time])
+                    if use_key_feature:
+                        pc_key_feature[i, :, :] = np.squeeze(pc_key_eig)
 
     hdf5_file = h5py.File(save_path, mode='a')
     hdf5_file.create_dataset('train_set', train_set_shape, np.float32)  # be careful about the dtype
@@ -101,7 +112,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
     hdf5_file.create_dataset('train_set_local', train_set_local_shape, np.float32)
     if shuffle:
 
-        idx = np.arange(nb_types*n)
+        idx = np.arange(np.shape(pc_tile)[0])
         np.random.shuffle(idx)
         pc_tile = pc_tile[idx, ...]
         pc_label = pc_label[idx, ...]
@@ -112,6 +123,7 @@ def save_data(save_path='', base_path='', n=5000, use_key_feature=True, train_da
     hdf5_file["train_set_local"][...] = pc_key_feature
     hdf5_file.close()
     return compute_time
+
 
 def read_data(h5_path=''):
     readh5 = h5py.File(h5_path, "r")  # file path
@@ -740,9 +752,9 @@ def txt2normalply(txt_path, write_path='/ply/'):
 
 
 if __name__ == "__main__":
-    print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_ns.h5',
+    print(save_data(save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/data_s.h5',
               base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection',
-              normalize=True, train_data=True, shuffle=True, n=5000, nb_types=8))
+              normalize=False, train_data=True, shuffle=True, n=5000, nb_types=8))
 
     # read_data(h5_path='/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/project_data.h5')
     # sample_txt_pointcloud('/home/sjtu/Documents/ASY/point_cloud_deep_learning/simple_pointnet for translation estimation/arm_monster.txt',
@@ -761,17 +773,14 @@ if __name__ == "__main__":
     # pc1 = PointCloud(stack_4[1024:2048, :])
     # pc1 = PointCloud(stack_4[2048:3072, :])
     # pc1 = PointCloud(stack_4[3072:4096, :])
-
     # for i in range(1, 9):
     #    augment_data(base_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i),
     #                  pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object0.04noise/small_resolution_projection/lab'+str(i)+'/final.ply',
     #                  add_noise=0.04, add_outlier=0.04, n=5000, not_project=False)
-
     # test_data(h5_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/project_data.h5', rand_trans=False, showinone=False)
     # pc = np.loadtxt('/media/sjtu/software/ASY/pointcloud/lab_workpice.txt')
     # pc = PointCloud(pc)
     # pc.show()
-
     #scene_seg_dataset(pc_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece',
     #                  save_path='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/scene_segmentation3.h5',
     #                  samples=1000, max_nb_pc=5,

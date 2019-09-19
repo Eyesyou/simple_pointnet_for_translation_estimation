@@ -135,6 +135,17 @@ def show_trans(point_cloud1, point_cloud2, colorset=[], use_mayavi=True, scale=4
     :param scale:
     :return: nothing
     """
+    if isinstance(point_cloud1,PointCloud) :
+        point_cloud1 = point_cloud1.position
+        point_cloud1=point_cloud1[np.newaxis, :]
+    elif len(np.shape(point_cloud1))<3:
+        point_cloud1=point_cloud1[np.newaxis, :]
+    if isinstance(point_cloud2,PointCloud) :
+        point_cloud2 = point_cloud2.position
+        point_cloud2 = point_cloud2[np.newaxis, :]
+    elif len(np.shape(point_cloud2))<3:
+        point_cloud2=point_cloud2[np.newaxis, :]
+
     B = point_cloud1.shape[0]  # batch
     a1, b1, c1 = point_cloud1[:, :, 0], point_cloud1[:, :, 1], point_cloud1[:, :, 2]  # Bxnx1
     a1, b1, c1 = np.reshape(a1, (B, -1)), np.reshape(b1, (B, -1)), np.reshape(c1, (B, -1))  # Bxn
@@ -458,6 +469,11 @@ class PointCloud:
 
     def __add__(self, other):
         return PointCloud(np.concatenate([self.position, other.position], axis=0))
+
+    def save(self, path=''):
+        pcd = o3d.PointCloud()
+        pcd.points = o3d.Vector3dVector(self.position)
+        o3d.write_point_cloud(path, pcd)
 
     def half_by_plane(self, plane=None, n=1024, grid_resolution=(256, 256), show_result=False):
         """

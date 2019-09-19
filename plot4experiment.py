@@ -8,6 +8,8 @@ import os
 import sys
 import matplotlib
 import open3d as o3d
+import tables
+import show_pc
 import time
 from matplotlib import pyplot as plt
 import random
@@ -113,17 +115,18 @@ def plot_embedding_3d(X, Y, title=None, point_clouds=None):
     plt.show()
     mlab.show()
 
-def noise_outliers(pointclous):
+def noise_outliers(pointclous, noise=0.05, outliers=0.05):
+
     fig = plt.figure(figsize=(38, 20), dpi=600, facecolor='w')
     for j, i in enumerate(pointclous):
         pc = PointCloud(i)
-        pc.down_sample(number_of_downsample=2048)
+        pc.down_sample(number_of_downsample=1024)
 
         for k in range(4):
             if k == 3:
                 k = 4
-            pc.add_noise(factor=k*0.02)
-            pc.add_outlier(factor=k*0.02)
+            pc.add_noise(factor=k*noise)
+            pc.add_outlier(factor=k*outliers)
             m_fig = mlab.figure(bgcolor=(1, 1, 1))
 
             mlab.points3d(pc.position[:, 0], pc.position[:, 1], pc.position[:, 2],
@@ -320,38 +323,100 @@ def segmentation_pcs_plot(pcs_path='', colorset=None):
     mlab.show()
 
 
-def projection_plot(pcpath=''):
+def projection_plot(pcpath='', noise = 0.05, outlier=0.05, savefig=False):
     f_list = [pcpath + '/' + i for i in os.listdir(pcpath) if os.path.splitext(i)[1] == '.ply']
     fig = plt.figure(figsize=(38, 20), dpi=600, facecolor='w')
+    colunms = 8
     for i,j in enumerate(f_list):
-        pc = PointCloud(j)
-        pc.down_sample(number_of_downsample=10000)
-        size = 2.5
-        if i ==7:
-            size  = 1
-        try:
-            mfig = pc.half_by_plane(n=1024, grid_resolution=(200, 200), show_result=size)
-        except:
+        for k in range(colunms):
+            pc = PointCloud(j)
+            pc.down_sample(number_of_downsample=10000)
+            pc.add_noise(noise)
+            pc.add_outlier(outlier)
+            pts_size = 2.5
+            if i ==7:
+                pts_size = 1
             try:
-                mfig = pc.half_by_plane(n=1024, grid_resolution=(250, 250), show_result=size)
+                mfig = pc.half_by_plane(n=1024, grid_resolution=(200, 200), show_result=pts_size)
             except:
                 try:
-                    mfig = pc.half_by_plane(n=1024, grid_resolution=(300, 300), show_result=size)
+                    mfig = pc.half_by_plane(n=1024, grid_resolution=(250, 250), show_result=pts_size)
                 except:
-                    mfig = pc.half_by_plane(n=1024, grid_resolution=(650, 650), show_result=size)
+                    try:
+                        mfig = pc.half_by_plane(n=1024, grid_resolution=(300, 300), show_result=pts_size)
+                    except:
+                        mfig = pc.half_by_plane(n=1024, grid_resolution=(650, 650), show_result=pts_size)
 
 
-        f = mlab.gcf()  # this two line for mlab.screenshot to work
-        f.scene._lift()
-        mlab.savefig(str(i)+'.png')
-        img = mlab.screenshot(figure=mfig)
-        mlab.close()
-        ax = fig.add_subplot(2, 4, i+1)
-        ax.imshow(img)
-        ax.set_axis_off()
+            f = mlab.gcf()  # this two line for mlab.screenshot to work
+            f.scene._lift()
+            if savefig:
+                mlab.savefig(str(i)+str(k)+'.png')
+            img = mlab.screenshot(figure=mfig)
+            mlab.close()
+            ax = fig.add_subplot(len(f_list), colunms, i*colunms+k+1)
+            ax.imshow(img)
+            ax.set_axis_off()
 
     plt.subplots_adjust(wspace=0, hspace=0)
-    plt.show()
+
+    if savefig:
+        plt.savefig('projection.png')
+        plt.show()
+    plt.close()
+
+def pose_estimation(posefile='',real_single_h5='',model_filepath=''):
+    scene_idx = 19 # 0-53 for scene objcet 11 3 19 2
+    model_idx = 2# 0-7 for 8 class of model objcet
+
+
+    poseset = tables.open_file(posefile, mode='r')
+    random_pose = poseset.root.random_pose[scene_idx,:]
+    predict_pose = poseset.root.predict_pose[scene_idx,:]
+    print('random_pose:', poseset.root.random_pose[[0, 1,  4,  5, 6, 9, 11, 19],:])
+    print('predict_pose:', poseset.root.predict_pose[[0, 1,  4,  5, 6, 9, 11, 19],:] )
+
+    readh5 = h5py.File(real_single_h5)
+    for i in [0, 1,  4,  5, 6, 9, 11, 19]:
+        scene_pc = readh5['train_set'][i, :]  # n * 1024 * 3
+        scene_pc = PointCloud(scene_pc)
+        scene_pc.save(path='pointcloud/fourkind/'+str(i)+'.ply')
+    print('scene_pc:', scene_pc)
+
+    model_pc = [model_filepath + '/' + i for i in os.listdir(model_filepath) if os.path.splitext(i)[1] == '.ply'][model_idx]
+    model_pc = PointCloud(model_pc)
+    model_pc.down_sample()
+
+    light = np.array([[1.0, 0.0, 0.0],
+                      [0.0, 0.0, 1.0],
+                      [1.0, 1.0, 0.0],
+                      [0.0, 1.0, 0.0]])
+    shade = light * 0.7
+    light1 = tuple(light[0, :].tolist())
+    shade1 = tuple(shade[0, :].tolist())
+    light2 = tuple(light[1, :].tolist())
+    shade2 = tuple(shade[1, :].tolist())
+    light3 = tuple(light[2, :].tolist())
+    shade3 = tuple(shade[2, :].tolist())
+    light4 = tuple(light[3, :].tolist())
+    shade4 = tuple(shade[3, :].tolist())
+
+    colorset = [[light4, light2], [shade2, light2], [shade3, light3], [shade4, light4]]
+
+    # initial pose :
+    fig = show_pc.show_trans(scene_pc, model_pc, colorset=colorset, scale=1, returnfig=True)
+
+    filename1 = 'poseestimation/real/before_alignment1.png'
+    while (True):
+        if os.path.exists(filename1):
+            filename1 = filename1.split('.')[0][:-1] + str(int(filename1.split('.')[0][-1]) + 1) + '.png'
+            continue
+        break
+    f = mlab.gcf()  # this two line for mlab.screenshot to work
+    f.scene._lift()
+    mlab.savefig(filename=filename1)
+    print('before image saved')
+    mlab.close()
 
 
 
@@ -360,7 +425,7 @@ if __name__ == "__main__":
     # print('the type of X_tsne is {}:, the shape is {}'.format(type(X), X.shape))
     # plot_embedding_3d(X, Y)
 
-    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece'
+    # base_path = '/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object'
     # f_list = [base_path + '/' + i for i in os.listdir(base_path) if os.path.splitext(i)[1] == '.ply']
     # noise_outliers(f_list)
     # x = np.linspace(0, 1, 16)
@@ -412,4 +477,6 @@ if __name__ == "__main__":
     #         mlab.close()
     # segmentation_pcs_plot(pcs_path='/media/sjtu/software/ASY/pointcloud/三维扫描7.8/24')
 
-    projection_plot(pcpath='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object')
+    # projection_plot(pcpath='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object', savefig=True)
+    pose_estimation(posefile='pose.h5', real_single_h5='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/segmentationed/real_single_data.h5',
+                    model_filepath='/media/sjtu/software/ASY/pointcloud/lab scanned workpiece/8object')

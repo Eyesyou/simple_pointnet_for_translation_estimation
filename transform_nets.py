@@ -172,18 +172,14 @@ def homo_transform_net(point_cloud, point_cloud_local, is_training, classificati
 
     intersection = tf.layers.dense(net, 1024, activation=tf.nn.relu)
     net_q = tf.layers.dense(intersection, 1024, activation=tf.nn.relu)
-    net_q = tf.layers.dense(net_q, 1024, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 512, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 512, activation=tf.nn.relu)
-    net_q = tf.layers.dense(net_q, 256, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 256, activation=tf.nn.relu)
     net_q = tf.layers.dense(net_q, 128, activation=tf.nn.relu)  # BX64
 
     net_t = tf.layers.dense(intersection, 1024, activation=tf.nn.relu)
-    net_t = tf.layers.dense(net_t, 1024, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 512, activation=tf.nn.relu)
-    net_t = tf.layers.dense(net_t, 256, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 256, activation=tf.nn.relu)
     net_t = tf.layers.dense(net_t, 128, activation=tf.nn.relu)
     quaternion = tf.layers.dense(net_q, 4)
